@@ -1,6 +1,6 @@
 # Two-day implementation and integration plan
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 ---
 
@@ -8,7 +8,7 @@
 
 | Phase | Primary lead | Supporting work | Shared checkpoint |
 |---|---|---|---|
-| **1. Skeleton and baseline** | Shaan: controller | Vo Dinh Nhan: complete `plan_from()`; Ki Chun: LiDAR visualization | Robot follows nodes on obstacle-free track; scans visible |
+| **1. Skeleton and baseline** | Shaan: [controller debug](controller-debug.md) (`straight`, `turn`, then `loop`) | Vo Dinh Nhan: complete `plan_from()`; Ki Chun: LiDAR visualization | Robot follows nodes on obstacle-free track; scans visible |
 | **2. First obstacle** | Ki Chun: passability | Shaan: avoidance target; Vo Dinh Nhan: blocked-edge transitions | Robot either passes a simple obstacle safely or replans correctly |
 | **3. Integration** | Vo Dinh Nhan: state-machine tests | Ki Chun + Shaan: perception/controller refinements | No contradictory perception/steering outcomes |
 | **4. Robustness** | **All three** | Repeat trials, tune margins, investigate occlusion and narrow passages | Document success rate, collision failures, and timing |
@@ -22,8 +22,8 @@ Parallel work is useful, but **integrate the first working baseline on Day 1**. 
 
 | Time | Ki Chun — perception | Shaan — control | Vo Dinh Nhan — planning/integration | Joint milestone |
 |---|---|---|---|---|
-| **Day 1, first half** | Inspect LiDAR and survey selected edges manually; begin [ground truth](edge-ground-truth.md) | Get the robot to align and follow one edge in the obstacle-free world | Complete `plan_from()` and basic waypoint/state behavior | One edge traversed; scans visible |
-| **Day 1, second half** | Test first two clearance edges in [four selected edge tests](testing.md#edge-specific-perception-and-clearance-tests) | Add obstacle-aware target selection | Wire up blocked-edge transitions and run the first integration test | One obstacle case tested end-to-end |
+| **Day 1, first half** | Inspect LiDAR and survey selected edges manually; begin [ground truth](edge-ground-truth.md) | Run [controller-only `straight` and `turn` tests](controller-debug.md) in the obstacle-free world | Complete `plan_from()` and basic waypoint/state behavior | One edge traversed; scans visible |
+| **Day 1, second half** | Test first two clearance edges in [four selected edge tests](testing.md#edge-specific-perception-and-clearance-tests) | Run the full [18-waypoint `loop` controller test](controller-debug.md), then add obstacle-aware target selection | Wire up blocked-edge transitions and run the first integration test | One obstacle case tested end-to-end |
 | **Day 2, first half** | Compare detector on confirmed survey edges, prioritizing the final challenge | Tune avoidance and stopping behavior | Fix state transitions and repeatability failures | Most difficult segment tested |
 | **Day 2, second half** | Support tuning and capture scan/clearance evidence | Support full run and capture control evidence | Coordinate final full-maze tests | Stable submission, demo recording, and brief presentation |
 
@@ -52,7 +52,7 @@ Parallel work is useful, but **integrate the first working baseline on Day 1**. 
 ## Immediate Next Actions
 
 1. **Confirm or swap the proposed leads.**
-2. Start three parallel tasks directly: obstacle-free controller, `plan_from()`, and LiDAR visualization.
+2. Start three parallel tasks directly: [mocked-path obstacle-free controller tests](controller-debug.md), `plan_from()`, and LiDAR visualization.
 3. Agree on coordinate frames and how perception hands obstacle information to avoidance.
 4. Combine the first working changes on Day 1 and demonstrate one successful edge traversal before expanding complexity.
 5. Keep a short shared log of experiments, parameter values, failures, and improvements; this will also help with the project gala and optional effort documentation.

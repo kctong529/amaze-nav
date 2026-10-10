@@ -1,6 +1,6 @@
 # RViz and debugging guide
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 ---
 
@@ -32,3 +32,5 @@
 For precise edge starting poses and scenarios, see [teleport tests](testing.md).
 
 For manual edge exploration, rosbag recording, and ground-truth evidence, see [the 40-edge survey](edge-ground-truth.md). For RViz acceptance during autonomous navigation, see [navigator tests](testing.md).
+
+For controller-only troubleshooting (debug-mode commands, exact teleports, the 18-waypoint loop, and waypoint-arrival pitfalls), see [controller-debug.md](controller-debug.md).

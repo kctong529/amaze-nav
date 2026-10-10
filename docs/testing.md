@@ -1,10 +1,14 @@
 # Teleport-based testing and acceptance
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 ---
 
 **Scope:** This document validates the implemented navigator, including perception decisions, control, and replanning. For **manual teleoperation, ROS bag collection, and evidence-based P/B/U labels of all 40 edges**, use the [ground-truth survey](edge-ground-truth.md). Do not treat the four cases below as a complete ground-truth inventory.
+
+## Controller-only testing (before integration)
+
+For Shaan’s independent control work, use [controller-debug.md](controller-debug.md) instead of these obstacle-world acceptance tests. It defines the `AMAZE_NAV_CONTROLLER_TEST` switch, exact teleport poses, and mocked `straight`, `turn`, and `loop` paths. The 18-waypoint `loop` explicitly preserves all intermediate graph nodes and validates every consecutive edge with `GridGraph.has_edge()`. Perception bypasses are **test-only** and should not be used for the obstacle-containing world.
 
 ## Teleport-Based Smoke Tests
 

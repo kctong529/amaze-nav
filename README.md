@@ -23,6 +23,7 @@ The provided navigator uses `FOLLOW → BACKTRACK → REPLAN → FOLLOW` for blo
 - [Team responsibilities](docs/tasks.md) — suggested owners, deliverables, definitions of done, interface agreements.
 - [Two-day implementation plan](docs/development.md) — integration sequence, priorities, risks, lightweight collaboration.
 - [Edge passability ground-truth survey](docs/edge-ground-truth.md) — manually investigate all 40 edges and record evidence before evaluating perception.
+- [Controller-only debug tests](docs/controller-debug.md) — reversible `straight`, `turn`, and `loop` mocked paths in the obstacle-free world.
 - [Navigator acceptance tests](docs/testing.md) — repeatable teleport tests, four priority edges, integration checks.
 - [RViz & debugging](docs/debugging.md) — available topics, optional markers, and data to monitor.
 

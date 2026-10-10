@@ -1,6 +1,6 @@
 # Understanding the provided navigation framework
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 ---
 
@@ -83,3 +83,5 @@ The template does **not** publish a `nav_msgs/Path`, occupancy grid, or obstacle
 5. Recovery state transitions and reliability testing.
 
 See [suggested ownership](tasks.md) and [two-day implementation plan](development.md).
+
+For independent testing of `turtlebot_control()` with fixed valid graph paths and perception bypasses, see the [controller-only debug guide](controller-debug.md).

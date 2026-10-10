@@ -1,6 +1,6 @@
 # Edge Passability Ground-Truth Survey
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 **Purpose:** Manually inspect **every one of the 40 undirected edges** in the provided 5 × 5 node graph and record evidence-based ground-truth passability labels *before* implementing `is_passable()`. This is a data-collection protocol, not a record of confirmed passability. **All entries start unclassified.**
 

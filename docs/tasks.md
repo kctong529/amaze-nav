@@ -1,6 +1,6 @@
 # Suggested task division
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 ---
 
@@ -51,19 +51,19 @@ The division below is based on **interfaces and dependencies**, rather than assi
 **Deliverables**
 - [ ] Set `lookahead_dist`, `v_max`, `w_max`, and optional PID parameters.
 - [ ] Implement `turtlebot_control(robot_pos, robot_h, target, dt, Ld)` to return `(v_cmd, w_cmd)`.
-- [ ] Establish reliable heading alignment, straight driving, turns, and waypoint arrival on the **obstacle-free** track.
+- [ ] Establish reliable heading alignment, straight driving, turns, and waypoint arrival on the **obstacle-free** track using the [`straight`, `turn`, and `loop` controller debug routes](controller-debug.md).
 - [ ] Implement `obstacle_avoided_target(robot_pos, seg_dir_yaw)` using the agreed perception output.
 - [ ] Ensure targets remain in the intended corridor and immediate motion has adequate clearance.
 - [ ] Add safe speed reduction/stopping when nearby space is uncertain, including during backtracking.
 - [ ] Record repeatability and tuning results for controller parameters.
 
 **Definition of done:**
-- [ ] From a chosen start node on the **obstacle-free** world (e.g. checkpoint 1), the robot aligns with the next edge, travels to the subsequent waypoint, and settles inside `node_tol` without oscillation or collision.
+- [ ] Complete the [controller-only debug tests](controller-debug.md): `straight` from `(0.712, 0.0)` to `(2.136, 0.0)`, `turn` from `(2.136, -4.272)` via `(2.136, -5.696)` to `(3.560, -5.696)`, and then the full 18-waypoint `loop` without skipped graph edges or collisions.
 - [ ] The published `/cmd_vel` values respect configured limits; robot motion observed on `/odom` follows the intended target.
 - [ ] Once perception is integrated, a feasible avoidance target is tracked without contact with obstacles; the robot slows or stops when immediate clearance is not established.
 - [ ] Repeat the same short run at least three times and record failures and controller parameters.
 
-**Quick test:** Teleport to **checkpoint 1** `(3.560, -4.272)` in the obstacle-free world and drive a single adjacent edge, then repeat with an obstacle-containing segment. Watch `/odom`, `/cmd_vel`, `/scan`, and the current lookahead target (if published as a marker).
+**Quick test:** Follow [controller-debug.md](controller-debug.md) to select `AMAZE_NAV_CONTROLLER_TEST=straight`, `turn`, or `loop`, teleport to the corresponding start pose, and bypass unfinished perception only in debug mode. Watch `/odom`, `/cmd_vel`, and the OpenCV path view. After the isolated controller tests pass, test obstacle-aware targeting with the integrated navigator; see [navigator tests](testing.md).
 
 ### Workstream C — Planning, navigation state machine, and testing
 
