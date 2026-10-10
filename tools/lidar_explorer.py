@@ -15,6 +15,8 @@ from perception_geometry import (
     transform_points_2d,
     points_to_edge_frame,
     extract_slice,
+    cluster_lateral_points,
+    find_gaps,
 )
 
 SENSOR_WINDOW = "LiDAR Explorer - Sensor Frame"
@@ -28,6 +30,13 @@ EDGE_LENGTH = 1.424
 
 SLICE_THICKNESS = 0.10
 SLICE_STEP = 0.10
+CLUSTER_MAX_GAP = 0.05
+CLUSTER_MIN_POINTS = 3
+
+ROBOT_WIDTH = 0.178
+SAFETY_MARGIN = 0.04
+
+REQUIRED_WIDTH = ROBOT_WIDTH + 2 * SAFETY_MARGIN
 
 
 def scan_to_points(scan: LaserScan) -> np.ndarray:
@@ -190,11 +199,131 @@ def draw_world_points(points, sensor_xy=None, size=700, scale=100):
     cv2.imshow(ODOM_WINDOW, image)
 
 
+def draw_gap_annotations(
+    image,
+    intervals,
+    gaps,
+    to_pixel,
+    slice_s,
+    required_width,
+):
+    """
+    Annotate observed obstacle intervals and candidate
+    openings on the edge-frame visualization.
+    """
+    if intervals is None:
+        intervals = []
+
+    if gaps is None:
+        gaps = []
+
+    _, slice_y = to_pixel(slice_s, 0.0)
+
+    height, width = image.shape[:2]
+
+    # Mark the observed extent of each obstacle cluster.
+    for t_min, t_max in intervals:
+        x1, _ = to_pixel(slice_s, t_min)
+        x2, _ = to_pixel(slice_s, t_max)
+
+        # Red: observed obstacle interval.
+        cv2.line(
+            image,
+            (x1, slice_y),
+            (x2, slice_y),
+            (0, 0, 255),
+            7,
+        )
+
+        # Mark the lateral extent of the cluster.
+        for x in (x1, x2):
+            cv2.circle(
+                image,
+                (x, slice_y),
+                4,
+                (0, 0, 255),
+                -1,
+            )
+
+    # Display the candidate openings between clusters.
+    for gap in gaps:
+        left = gap["left"]
+        right = gap["right"]
+        midpoint = gap["midpoint"]
+        gap_width = gap["width"]
+
+        x_left, _ = to_pixel(slice_s, left)
+        x_right, _ = to_pixel(slice_s, right)
+        x_middle, _ = to_pixel(slice_s, midpoint)
+
+        # Green means the measured candidate width
+        # meets our initial clearance threshold.
+        # Amber means it is narrower than the threshold.
+        if gap_width >= required_width:
+            color = (0, 160, 0)
+        else:
+            color = (0, 165, 255)
+
+        annotation_y = slice_y - 35
+
+        # Width indicator.
+        cv2.line(
+            image,
+            (x_left, annotation_y),
+            (x_right, annotation_y),
+            color,
+            2,
+        )
+
+        cv2.line(
+            image,
+            (x_left, annotation_y - 5),
+            (x_left, annotation_y + 5),
+            color,
+            2,
+        )
+
+        cv2.line(
+            image,
+            (x_right, annotation_y - 5),
+            (x_right, annotation_y + 5),
+            color,
+            2,
+        )
+
+        # Candidate midpoint.
+        cv2.circle(
+            image,
+            (x_middle, slice_y),
+            5,
+            color,
+            -1,
+        )
+
+        label = f"{gap_width:.3f} m"
+
+        # Keep the text inside the visualization.
+        text_x = max(5, min(x_middle - 40, width - 100))
+        text_y = max(20, annotation_y - 10)
+
+        cv2.putText(
+            image,
+            label,
+            (text_x, text_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            color,
+            1,
+        )
+
+
 def draw_edge_frame(
     edge_points,
     slice_points,
     slice_s,
     robot_st=None,
+    obstacle_intervals=None,
+    candidate_gaps=None,
     size=700,
     scale=300,
 ):
@@ -290,6 +419,15 @@ def draw_edge_frame(
                 (0, 170, 0),
                 -1,
             )
+
+    draw_gap_annotations(
+        image,
+        obstacle_intervals,
+        candidate_gaps,
+        to_pixel,
+        slice_s,
+        REQUIRED_WIDTH,
+    )
 
     # Draw the robot in edge coordinates.
     if robot_st is not None:
@@ -467,6 +605,14 @@ class LidarExplorer(Node):
             SLICE_THICKNESS,
         )
 
+        obstacle_intervals = cluster_lateral_points(
+            slice_points,
+            max_gap=CLUSTER_MAX_GAP,
+            min_points=CLUSTER_MIN_POINTS,
+        )
+
+        candidate_gaps = find_gaps(obstacle_intervals)
+
         # Convert the LiDAR sensor's position into edge coordinates.
         sensor_xy = (
             transform.transform.translation.x,
@@ -485,6 +631,8 @@ class LidarExplorer(Node):
             slice_points,
             self.slice_s,
             robot_st=sensor_st,
+            obstacle_intervals=obstacle_intervals,
+            candidate_gaps=candidate_gaps,
         )
 
         # Draw the odometry-frame visualization.
