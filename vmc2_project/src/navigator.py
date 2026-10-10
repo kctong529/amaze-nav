@@ -344,11 +344,11 @@ class GridPathFollowerNode(Node):
         # --- Motion and geometry parameters ---
         self.goal_tol = 0.05
         self.node_tol = 0.05
-        # TODO: YOUR CODE HERE: ~3 lines: set the lookahead distance for pure-pursuit based control, and the maximum allowed linear and angular velocities 
+        # TODO: YOUR CODE HERE: ~3 lines: set the lookahead distance for pure-pursuit based control, and the maximum allowed linear and angular velocities
         self.lookahead_dist = ...
-        self.v_max = ...
-        self.w_max = ...
-        # ...
+        self.v_max = 0.2  # Approximate value
+        self.w_max = 2  # Safe value
+        self.v_average = 0.1  # Speed in average use
         # TODO: YOUR CODE HERE: ~1-2 lines: set your PID controller/s for linear/angular motion
         self.pid_angular  = PID(kp=..., ki=..., kd=..., i_limit=...)
 
@@ -362,9 +362,9 @@ class GridPathFollowerNode(Node):
 
         # --- State ---
         self.pose_ready = False                    # to check if odometry values are being received
-        self.x = 0.0; self.y = 0.0; self.yaw = 0.0 # turtlebot pose 
+        self.x = 0.0; self.y = 0.0; self.yaw = 0.0 # turtlebot pose
         self.scan: Optional[LaserScan] = None      # stores the latest scan
-        self.mode = 'None'                         # operation mode 
+        self.mode = 'None'                         # operation mode
         self.last_t = self._now()
 
         # --- Grid (5x5) ---
@@ -405,7 +405,7 @@ class GridPathFollowerNode(Node):
             3. REPLAN: recalculate A* to get new path to the goal from the current node
             4. DONE: when goal has been reached
         """
-        self._set_mode('FOLLOW') 
+        self._set_mode('FOLLOW')
 
         # --- Vizualization ---
         self.win = "Grid A* Path Follower"
@@ -448,7 +448,7 @@ class GridPathFollowerNode(Node):
         Args:
             graph: GridGraph instance.
             start: (x, y) start coordinate
-            goal:  (x, y) goal coordinate 
+            goal:  (x, y) goal coordinate
 
         Returns:
             List of (x, y) coordinates along the path from start node to goal node,
@@ -581,7 +581,7 @@ class GridPathFollowerNode(Node):
             True if passable; False otherwise.
         """
         return False
-    
+
     # --- TODO: YOUR CODE HERE: Implement the function to generate the lookahead point away from obstacles  ---
     def obstacle_avoided_target(self, robot_pos: Coord, seg_dir_yaw: float) -> Coord:
         """
@@ -597,8 +597,8 @@ class GridPathFollowerNode(Node):
             Target (x, y) in world/odom frame.
         """
         return target
-    
-    # --- TODO: YOUR CODE HERE: controller used for TurtleBot ---
+
+    # --- TODO: YOuR CODE HERE: controller used for TurtleBot ---
     def turtlebot_control(self, robot_pos: Coord, robot_h: float, target: Coord, dt: float, Ld: float) -> Tuple[float, float]:
         """
         Compute (v, w) commands that blend pure-pursuit with PID:
@@ -613,6 +613,13 @@ class GridPathFollowerNode(Node):
         Returns:
             (v_cmd, w_cmd): linear and angular velocity commands.
         """
+        xl, yl = np.array([[np.cos(robot_h), np.sin(robot_h)], [-np.sin(robot_h), np.cos(robot_h)]]) @ (np.asarray(target) - np.asarray(robot_pos))  # Coordinate transform
+        L2 = xl ** 2 + yl ** 2  # L^2
+        r = L2/(2*yl)  # Radius
+        gamma = 1.0 / r  # Curvature
+        v_max_now = np.min(np.abs(gamma * self.w_max), self.v_max)  # Maximum linear speed in this scenario
+        v_cmd = np.min(self.v_average, v_max_now)
+        w_cmd = gamma * v_cmd  # Steer command
         return v_cmd, w_cmd
 
     # --- Publisher helpers ---
@@ -642,7 +649,7 @@ class GridPathFollowerNode(Node):
             robot: optional (x, y) turtlebot position to plot.
             target: optional (x, y) target point to plot.
         """
-       
+
         extra = [self.start_pos, self.goal_pos]
         if robot: extra.append(robot)
         if target: extra.append(target)
@@ -670,13 +677,13 @@ class GridPathFollowerNode(Node):
             cv2.arrowedLine(img, pr, to_px(hx, hy), (0, 165, 255), 2, tipLength=0.3)
         # lookahead target (blue)
         if target is not None:
-            cv2.circle(img, to_px(*target), 7, (200, 0, 0), -1) 
+            cv2.circle(img, to_px(*target), 7, (200, 0, 0), -1)
         # HUD
         cv2.putText(img, f"Mode: {self.mode}", (20, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (20, 20, 20), 2)
         img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
         cv2.imshow(self.win, img); cv2.waitKey(1)
-    
+
     # --- Main control loop ----
     def control_step(self):
         """
@@ -733,8 +740,8 @@ class GridPathFollowerNode(Node):
         # --- MODE: REPLAN ---
         if self.mode == 'REPLAN':
             self.publish_stop()
-            # TODO: YOUR CODE HERE: 
-            # ~2 lines: Remove the edge if the edge is blocked 
+            # TODO: YOUR CODE HERE:
+            # ~2 lines: Remove the edge if the edge is blocked
             # ~1 line:  Set start_from to the previous node
             # ~1 line:  Replan the global path from new start point and store it in self.full_path.
             # ~1 line:  Set the mode back to FOLLOW
@@ -762,12 +769,12 @@ class GridPathFollowerNode(Node):
         if not self.is_passable(seg_dir_yaw):
             # TODO: YOUR CODE HERE: ~4 lines
             # 1. Stop the turtlebot immediately
-            # 2. set 'prev_node' to 'ga' 
-            # 3. set 'block_edge' to '(ga, gb)' 
+            # 2. set 'prev_node' to 'ga'
+            # 3. set 'block_edge' to '(ga, gb)'
             # 4. set mode to 'BACKTRACK'
             self.draw_scene(robot=robot_position)
             return
-            
+
         target = self.obstacle_avoided_target(robot_position, seg_dir_yaw) # Get obstacle avoided lookahead target point
         v_cmd, w_cmd = self.turtlebot_control(robot_position, robot_heading, target, dt, self.lookahead_dist) # Get linear and angular velocity values from your control block
         self.publish_cmd(v_cmd, w_cmd) # publish the velocities
