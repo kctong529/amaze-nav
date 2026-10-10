@@ -6,7 +6,9 @@
 
 **Prerequisite:** Complete [Environment setup](setup.md) first; the repository already contains the extracted models and ROS package.
 
-**Scope:** This document validates the implemented navigator, including perception decisions, control, and replanning. For **manual teleoperation, ROS bag collection, and evidence-based P/B/U labels of all 40 edges**, use the [ground-truth survey](edge-ground-truth.md). Do not treat the four cases below as a complete ground-truth inventory.
+**Scope:** This document validates the implemented navigator, including perception decisions, control, and replanning. For **manual teleoperation, ROS bag collection, and the team’s complete P-clear/P-constrained/B labels for all 40 edges**, use the [ground-truth survey](edge-ground-truth.md). Do not treat the four cases below as a complete ground-truth inventory.
+
+**Ground-truth reference:** [Annotated 40-edge map and table](edge-ground-truth.md#current-annotated-ground-truth). Green = constrained passable, red = blocked, unmarked = unobstructed passable. Include all three classes when evaluating false-blocked decisions and traversal success.
 
 ## Controller-only testing (before integration)
 
@@ -122,4 +124,4 @@ Keep one compact shared note or chat thread for tests—no issue tracker require
 
 For display setup, see [RViz & debugging](debugging.md).
 
-**Comparison with ground truth:** Before interpreting an `is_passable()` result as correct or incorrect, consult the corresponding evidence-based label in [the survey](edge-ground-truth.md). Keep unknown (`U`) edges out of binary accuracy totals.
+**Comparison with ground truth:** Before interpreting an `is_passable()` result as correct or incorrect, consult the corresponding evidence-based label in [the survey](edge-ground-truth.md). Map `P-clear` and `P-constrained` to expected `True`, and `B` to expected `False`. The current annotation labels every edge; separately document which labels have direct traversal evidence.

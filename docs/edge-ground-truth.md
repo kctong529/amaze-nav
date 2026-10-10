@@ -2,17 +2,23 @@
 
 **Documentation:** [README](../README.md) · [Setup](setup.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
-**Purpose:** Manually inspect **every one of the 40 undirected edges** in the provided 5 × 5 node graph and record evidence-based ground-truth passability labels *before* implementing `is_passable()`. This is a data-collection protocol, not a record of confirmed passability. **All entries start unclassified.**
+**Purpose:** Maintain the team's current classification of **all 40 undirected graph edges** in the obstacle-containing world. The annotation is the team's stated ground-truth reference for evaluating perception, not an obstacle map to embed in the submitted navigator.
 
-## What counts as ground truth?
+## Current annotated ground truth
 
-In addition to a `P/B/U` judgment, optionally note whether visible side boundaries support reliable corridor-centering measurements. This is diagnostic geometry, **not** a substitute for the physical-traversability label and not data to hard-code into the submitted navigator.
+![Annotated maze: green = constrained passable, red = blocked, unmarked = unobstructed passable](assets/ground-truth-annotated.png)
 
-For this survey, an edge is **passable** when the TurtleBot can traverse between its adjacent node centers inside the intended corridor, with safe clearance and no contact, under careful manual control. An edge is **blocked** only if direct inspection and repeated attempts give convincing evidence that no collision-free route exists for the robot footprint. A failed drive, poor steering, or missing LiDAR information **does not prove blockage**. Mark such cases **uncertain**, and leave them out of binary evaluation until investigated.
+The team uses **three descriptive categories**:
 
-Record cross-sectional opening-width evidence **separately** from minimum clearance along a successfully traversed (or attempted) path; a narrow opening only proves an edge blocked if that opening is unavoidable and there is no alternative route inside the allowed corridor. Record observations separately for **A → B** and **B → A** where feasible. The underlying obstacle geometry should be the same, but visibility, access, turning space, and driving outcomes can differ by direction. Do not label a geometrically passable edge blocked solely because the current controller cannot traverse it.
+- **`P-clear`** — no obstacle between the adjacent graph nodes (unmarked edges); passable.
+- **`P-constrained`** — green dot: obstacles or a narrow opening are present, but the edge is considered passable with suitable steering.
+- **`B`** — red dot: the edge is considered blocked.
 
-Labels: `P` = confirmed traversable; `B` = convincingly physically blocked; `U` = uncertain/untested. Include confidence (`high`/`medium`/`low`) and evidence. A geometric opening estimate alone is not confirmation.
+For `is_passable()` ground-truth comparison, both passable categories map to **`True`**, while `B` maps to **`False`**. **No edges are currently classified as unknown.** The colors and the 40-edge table below represent the user's survey annotations, not independently verified no-contact robot trials. Confidence and trial evidence may be added later without changing the present classification.
+
+**Inventory summary:** 24 `P-clear`, 7 `P-constrained`, 9 `B` (40 total). Edge IDs use `Hrc` for an edge from row `r`, column `c` to column `c+1`, and `Vrc` for row `r` to row `r+1` at column `c`. All remaining edges not specifically annotated green/red are `P-clear`.
+
+The maze-specific classifications **must not be hard-coded into `navigator.py`**. A route's physical passability is also distinct from whether the current controller succeeds in traversing it. Keep measured gap widths and short-horizon safety predictions separate from these labels.
 
 ## 1. Prepare the environment
 
@@ -120,7 +126,8 @@ Edge ID:
 Direction: A -> B / B -> A
 World: obstacle-containing / obstacle-free
 Start pose + heading:
-Label: P / B / U
+Ground-truth label: P-clear / P-constrained / B
+Trial outcome (independent of ground truth): success / stopped / contact / inconclusive
 Confidence: high / medium / low
 Outcome: traversed to node / stopped safely / collision / aborted
 Obstacle geometry and available routes:
@@ -133,61 +140,61 @@ Notes (steering, sensor artifacts, possible false blockage):
 
 ## 4. Ground-truth inventory: all 40 edges
 
-Node labels use `RrCc` (row increases southward; column increases eastward). All 40 edges below are **initially `U`**. Fill in the status as evidence is collected. To avoid conflating geometry and controllability, enter an edge as `P` only after a clean traversal, `B` only with convincing geometric evidence, and otherwise `U`. Use the trial notes for directional differences.
+Node labels use `RrCc` (row increases southward; column increases eastward). The labels below are transcribed from the team annotation, with **unmarked edges explicitly treated as unobstructed and passable**. Trial confidence and evidence are intentionally separate from the classification; record later observations in the final column.
 
 ### Horizontal edges (20)
 
 | ID | A (west) | B (east) | Label | Confidence | Evidence / observations |
 |---|---|---|---|---|---|
-| H00 | R0C0 (0.712, 0.000) | R0C1 (2.136, 0.000) | U | — | — |
-| H01 | R0C1 (2.136, 0.000) | R0C2 (3.560, 0.000) | U | — | — |
-| H02 | R0C2 (3.560, 0.000) | R0C3 (4.984, 0.000) | U | — | — |
-| H03 | R0C3 (4.984, 0.000) | R0C4 (6.408, 0.000) | U | — | — |
-| H10 | R1C0 (0.712, -1.424) | R1C1 (2.136, -1.424) | U | — | — |
-| H11 | R1C1 (2.136, -1.424) | R1C2 (3.560, -1.424) | U | — | — |
-| H12 | R1C2 (3.560, -1.424) | R1C3 (4.984, -1.424) | U | — | — |
-| H13 | R1C3 (4.984, -1.424) | R1C4 (6.408, -1.424) | U | — | — |
-| H20 | R2C0 (0.712, -2.848) | R2C1 (2.136, -2.848) | U | — | — |
-| H21 | R2C1 (2.136, -2.848) | R2C2 (3.560, -2.848) | U | — | — |
-| H22 | R2C2 (3.560, -2.848) | R2C3 (4.984, -2.848) | U | — | — |
-| H23 | R2C3 (4.984, -2.848) | R2C4 (6.408, -2.848) | U | — | — |
-| H30 | R3C0 (0.712, -4.272) | R3C1 (2.136, -4.272) | U | — | — |
-| H31 | R3C1 (2.136, -4.272) | R3C2 (3.560, -4.272) | U | — | — |
-| H32 | R3C2 (3.560, -4.272) | R3C3 (4.984, -4.272) | U | — | — |
-| H33 | R3C3 (4.984, -4.272) | R3C4 (6.408, -4.272) | U | — | — |
-| H40 | R4C0 (0.712, -5.696) | R4C1 (2.136, -5.696) | U | — | — |
-| H41 | R4C1 (2.136, -5.696) | R4C2 (3.560, -5.696) | U | — | — |
-| H42 | R4C2 (3.560, -5.696) | R4C3 (4.984, -5.696) | U | — | — |
-| H43 | R4C3 (4.984, -5.696) | R4C4 (6.408, -5.696) | U | — | — |
+| H00 | R0C0 (0.712, 0.000) | R0C1 (2.136, 0.000) | P-clear | — | Unmarked; no edge obstacle |
+| H01 | R0C1 (2.136, 0.000) | R0C2 (3.560, 0.000) | P-clear | — | Unmarked; no edge obstacle |
+| H02 | R0C2 (3.560, 0.000) | R0C3 (4.984, 0.000) | P-clear | — | Unmarked; no edge obstacle |
+| H03 | R0C3 (4.984, 0.000) | R0C4 (6.408, 0.000) | P-constrained | — | Green annotation |
+| H10 | R1C0 (0.712, -1.424) | R1C1 (2.136, -1.424) | B | — | Red annotation |
+| H11 | R1C1 (2.136, -1.424) | R1C2 (3.560, -1.424) | P-clear | — | Unmarked; no edge obstacle |
+| H12 | R1C2 (3.560, -1.424) | R1C3 (4.984, -1.424) | P-clear | — | Unmarked; no edge obstacle |
+| H13 | R1C3 (4.984, -1.424) | R1C4 (6.408, -1.424) | P-clear | — | Unmarked; no edge obstacle |
+| H20 | R2C0 (0.712, -2.848) | R2C1 (2.136, -2.848) | P-clear | — | Unmarked; no edge obstacle |
+| H21 | R2C1 (2.136, -2.848) | R2C2 (3.560, -2.848) | P-clear | — | Unmarked; no edge obstacle |
+| H22 | R2C2 (3.560, -2.848) | R2C3 (4.984, -2.848) | P-clear | — | Unmarked; no edge obstacle |
+| H23 | R2C3 (4.984, -2.848) | R2C4 (6.408, -2.848) | P-clear | — | Unmarked; no edge obstacle |
+| H30 | R3C0 (0.712, -4.272) | R3C1 (2.136, -4.272) | P-clear | — | Unmarked; no edge obstacle |
+| H31 | R3C1 (2.136, -4.272) | R3C2 (3.560, -4.272) | P-clear | — | Unmarked; no edge obstacle |
+| H32 | R3C2 (3.560, -4.272) | R3C3 (4.984, -4.272) | P-clear | — | Unmarked; no edge obstacle |
+| H33 | R3C3 (4.984, -4.272) | R3C4 (6.408, -4.272) | P-clear | — | Unmarked; no edge obstacle |
+| H40 | R4C0 (0.712, -5.696) | R4C1 (2.136, -5.696) | P-clear | — | Unmarked; no edge obstacle |
+| H41 | R4C1 (2.136, -5.696) | R4C2 (3.560, -5.696) | P-clear | — | Unmarked; no edge obstacle |
+| H42 | R4C2 (3.560, -5.696) | R4C3 (4.984, -5.696) | B | — | Red annotation |
+| H43 | R4C3 (4.984, -5.696) | R4C4 (6.408, -5.696) | P-clear | — | Unmarked; no edge obstacle |
 
 ### Vertical edges (20)
 
 | ID | A (north) | B (south) | Label | Confidence | Evidence / observations |
 |---|---|---|---|---|---|
-| V00 | R0C0 (0.712, 0.000) | R1C0 (0.712, -1.424) | U | — | — |
-| V01 | R0C1 (2.136, 0.000) | R1C1 (2.136, -1.424) | U | — | — |
-| V02 | R0C2 (3.560, 0.000) | R1C2 (3.560, -1.424) | U | — | — |
-| V03 | R0C3 (4.984, 0.000) | R1C3 (4.984, -1.424) | U | — | — |
-| V04 | R0C4 (6.408, 0.000) | R1C4 (6.408, -1.424) | U | — | — |
-| V10 | R1C0 (0.712, -1.424) | R2C0 (0.712, -2.848) | U | — | — |
-| V11 | R1C1 (2.136, -1.424) | R2C1 (2.136, -2.848) | U | — | — |
-| V12 | R1C2 (3.560, -1.424) | R2C2 (3.560, -2.848) | U | — | — |
-| V13 | R1C3 (4.984, -1.424) | R2C3 (4.984, -2.848) | U | — | — |
-| V14 | R1C4 (6.408, -1.424) | R2C4 (6.408, -2.848) | U | — | — |
-| V20 | R2C0 (0.712, -2.848) | R3C0 (0.712, -4.272) | U | — | — |
-| V21 | R2C1 (2.136, -2.848) | R3C1 (2.136, -4.272) | U | — | — |
-| V22 | R2C2 (3.560, -2.848) | R3C2 (3.560, -4.272) | U | — | — |
-| V23 | R2C3 (4.984, -2.848) | R3C3 (4.984, -4.272) | U | — | — |
-| V24 | R2C4 (6.408, -2.848) | R3C4 (6.408, -4.272) | U | — | — |
-| V30 | R3C0 (0.712, -4.272) | R4C0 (0.712, -5.696) | U | — | — |
-| V31 | R3C1 (2.136, -4.272) | R4C1 (2.136, -5.696) | U | — | — |
-| V32 | R3C2 (3.560, -4.272) | R4C2 (3.560, -5.696) | U | — | — |
-| V33 | R3C3 (4.984, -4.272) | R4C3 (4.984, -5.696) | U | — | — |
-| V34 | R3C4 (6.408, -4.272) | R4C4 (6.408, -5.696) | U | — | — |
+| V00 | R0C0 (0.712, 0.000) | R1C0 (0.712, -1.424) | P-clear | — | Unmarked; no edge obstacle |
+| V01 | R0C1 (2.136, 0.000) | R1C1 (2.136, -1.424) | B | — | Red annotation |
+| V02 | R0C2 (3.560, 0.000) | R1C2 (3.560, -1.424) | P-constrained | — | Green annotation |
+| V03 | R0C3 (4.984, 0.000) | R1C3 (4.984, -1.424) | P-clear | — | Unmarked; no edge obstacle |
+| V04 | R0C4 (6.408, 0.000) | R1C4 (6.408, -1.424) | P-constrained | — | Green annotation |
+| V10 | R1C0 (0.712, -1.424) | R2C0 (0.712, -2.848) | P-clear | — | Unmarked; no edge obstacle |
+| V11 | R1C1 (2.136, -1.424) | R2C1 (2.136, -2.848) | P-constrained | — | Green annotation |
+| V12 | R1C2 (3.560, -1.424) | R2C2 (3.560, -2.848) | P-constrained | — | Green annotation |
+| V13 | R1C3 (4.984, -1.424) | R2C3 (4.984, -2.848) | B | — | Red annotation |
+| V14 | R1C4 (6.408, -1.424) | R2C4 (6.408, -2.848) | B | — | Red annotation |
+| V20 | R2C0 (0.712, -2.848) | R3C0 (0.712, -4.272) | B | — | Red annotation |
+| V21 | R2C1 (2.136, -2.848) | R3C1 (2.136, -4.272) | B | — | Red annotation |
+| V22 | R2C2 (3.560, -2.848) | R3C2 (3.560, -4.272) | B | — | Red annotation |
+| V23 | R2C3 (4.984, -2.848) | R3C3 (4.984, -4.272) | P-constrained | — | Green annotation |
+| V24 | R2C4 (6.408, -2.848) | R3C4 (6.408, -4.272) | P-clear | — | Unmarked; no edge obstacle |
+| V30 | R3C0 (0.712, -4.272) | R4C0 (0.712, -5.696) | P-clear | — | Unmarked; no edge obstacle |
+| V31 | R3C1 (2.136, -4.272) | R4C1 (2.136, -5.696) | B | — | Red annotation |
+| V32 | R3C2 (3.560, -4.272) | R4C2 (3.560, -5.696) | P-constrained | — | Green annotation |
+| V33 | R3C3 (4.984, -4.272) | R4C3 (4.984, -5.696) | P-clear | — | Unmarked; no edge obstacle |
+| V34 | R3C4 (6.408, -4.272) | R4C4 (6.408, -5.696) | P-clear | — | Unmarked; no edge obstacle |
 
 ## 5. Priority edges for clearance analysis
 
-These four edges were identified by the team as good clearance tests, with the last one regarded as the hardest **hypothesis to investigate**, not a confirmed classification:
+These four edges were identified by the team as good clearance tests, including the final southbound challenge. The current survey labels are recorded in the inventory above:
 
 | Priority | Edge | Suggested teleport command | Initial heading |
 |---|---|---|---|
@@ -196,20 +203,20 @@ These four edges were identified by the team as good clearance tests, with the l
 | 3 | (4.984, −2.848) → (6.408, −2.848) | `python3 teleport_edge.py 2 3 2 4` | East / 0° |
 | 4 | (6.408, −4.272) → (6.408, −5.696) | `python3 teleport_edge.py 3 4 4 4` | South / −90° |
 
-Use these to refine the measurement protocol, but **do not stop after these four**: the goal is a label for every edge, including apparently empty corridors. When time is limited, mark remaining edges `U` instead of guessing.
+Use these to refine the perception algorithm. All 40 edges already have survey labels; focus limited trial time on the constrained and blocked cases, while checking a few unobstructed edges for false positives.
 
 ## 6. Review and consolidate ground truth
 
 Before using the resulting labels to evaluate `is_passable()`:
 
-- Verify that each `P` edge has a documented **contact-free traversal**, ideally repeated and tested in both directions when possible.
-- Verify that each `B` edge has geometric or repeated observational evidence of insufficient continuous clearance, rather than merely a failed maneuver or a limited LiDAR viewpoint.
-- Resolve conflicting evidence or downgrade the edge to `U` with a clear note.
-- Separate **ground-truth labels** from the detector's predicted `True`/`False` values; only then calculate false positives/negatives on the confirmed subset.
+- For stronger validation, add contact-free traversal evidence to `P-clear` and `P-constrained` labels, ideally in both directions where useful.
+- For stronger validation, add independent geometric or repeated observational evidence for `B` labels; a failed maneuver alone is not proof of blockage.
+- Record conflicting evidence explicitly and re-examine that classification rather than silently changing the annotated ground truth.
+- Separate **ground-truth labels** from the detector's predicted `True`/`False` values; then evaluate false positives/negatives against the current survey labels, clearly noting that labels have not all been validated by clean robot traversals.
 - Remember the assignment prohibits hard-coding or prerecorded maze-specific knowledge **in the submitted navigator**. This survey is for testing, debugging, and algorithm validation, not to build a fixed blocked-edge lookup table into `navigator.py`.
 
-**Completion criterion:** All 40 graph edges have been explicitly reviewed and assigned `P`, `B`, or `U`, with evidence notes. The desired final dataset has confident P/B labels wherever safely determinable; any remaining uncertainty must be visible rather than silently resolved.
+**Current status:** All 40 graph edges have survey labels (31 passable, 9 blocked). Next, add controlled observations and trial evidence, particularly for constrained openings and blocked passages.
 
 ## Interpreting Stage 2 observations
 
-Keep ground-truth `P` / `B` / `U` labels based on observed physical traversal. For future detector comparison, separately record the **minimum short-horizon clearance predicted for an obstacle-shifted lookahead**. An apparently safe short arc is not proof that the whole edge can be traversed; failing one local target also does not establish that the edge is blocked. The survey remains independent of the algorithm and must not become a prerecorded obstacle map.
+Use the survey’s `P-clear`, `P-constrained`, and `B` labels as the current reference, while separately recording whether traversal observations support them. For future detector comparison, separately record the **minimum short-horizon clearance predicted for an obstacle-shifted lookahead**. An apparently safe short arc is not proof that the whole edge can be traversed; failing one local target also does not establish that the edge is blocked. The survey remains independent of the algorithm and must not become a prerecorded obstacle map.

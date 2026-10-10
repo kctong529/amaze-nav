@@ -35,7 +35,7 @@ The division below is based on **interfaces and dependencies**, rather than assi
 - [ ] Implement `is_passable(seg_dir_yaw)` using both stages; distinguish a bypassable obstacle or an unknown region from confirmed edge blockage.
 - [ ] Provide obstacle/clearance information that the avoidance controller can reuse.
 - [ ] Estimate segment-aligned left/right clearance `d_L`, `d_R`, plus validity/confidence; suppress centering when a side wall is not identified reliably.
-- [ ] Document ambiguous/unknown observations and define when there is sufficient evidence to mark an edge blocked.
+- [ ] Compare the detector with the complete [annotated ground-truth inventory](edge-ground-truth.md#current-annotated-ground-truth), including clear, constrained, and blocked edges. Document any ambiguous sensor observations separately from the existing ground-truth labels.
 - [ ] Optionally accumulate obstacle points **per active edge** if single-scan perception demonstrably fails due to occlusion.
 
 **Initial scope:** single-scan Cartesian points, clearance tests, and visualization. **Defer** full occupancy-grid mapping and probabilistic log-odds unless tests justify them.
@@ -111,4 +111,4 @@ A simple agreed helper such as `get_local_obstacles()` (returning points in a do
 
 See also [two-day sequencing and risk management](development.md), [test acceptance cases](testing.md), and [RViz diagnostics](debugging.md).
 
-**Perception evidence:** Ki Chun can collect the initial [edge-ground-truth survey](edge-ground-truth.md) using manual teleoperation (without running the navigator), with teammates helping on ambiguous edges. Ground-truth labels are established independently from `is_passable()` predictions. A useful acceptance result is a comparison against confirmed P/B edges, not a claim that every unobserved edge is blocked. See the [four automated navigator checks](testing.md#four-priority-navigator-tests).
+**Perception evidence:** Ki Chun can collect the initial [edge-ground-truth survey](edge-ground-truth.md) using manual teleoperation (without running the navigator), with teammates helping on ambiguous edges. The team has now annotated all 40 edges: unmarked edges are `P-clear`, green are `P-constrained`, and red are `B`. Compare `is_passable()` against those recorded labels; keep actual trial outcomes and evidence separate from the survey classifications. See the [four automated navigator checks](testing.md#four-priority-navigator-tests).
