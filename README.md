@@ -11,15 +11,15 @@ The TurtleBot must navigate a **5 × 5 graph maze** without collisions. Node pos
 | Component | Role |
 |---|---|
 | **Perception** | Interpret `/scan` to assess clearance and passage traversability |
-| **Avoidance & control** | Select an obstacle-aware lookahead target and command `/cmd_vel` |
-| **A* planning** | Follow the grid and replan when an edge is blocked |
+| **Avoidance & control** | Select an obstacle-aware lookahead target and command `/cmd_vel` using pure pursuit; optionally add LiDAR corridor-centering PID |
+| **A\* planning** | Follow the grid and replan when an edge is blocked |
 
 The provided navigator uses `FOLLOW → BACKTRACK → REPLAN → FOLLOW` for blocked passages and `DONE` on arrival. **Status: under development.** Planned methods and ownership are proposals, not claims of implemented behavior.
 
 ## Documentation
 
 - [Provided framework & function guide](docs/framework.md) — what's already implemented versus TODOs, modes, ROS interfaces.
-- [Perception & navigation methodology](docs/methodology.md) — gap detection, point clouds, trajectory clearance, occupancy-grid alternatives, safety and integration.
+- [Perception & navigation methodology](docs/methodology.md) — pure pursuit + confidence-weighted LiDAR centering, gap detection, clearance, and alternatives.
 - [Team responsibilities](docs/tasks.md) — suggested owners, deliverables, definitions of done, interface agreements.
 - [Two-day implementation plan](docs/development.md) — integration sequence, priorities, risks, lightweight collaboration.
 - [Edge passability ground-truth survey](docs/edge-ground-truth.md) — manually investigate all 40 edges and record evidence before evaluating perception.

@@ -4,7 +4,7 @@
 
 ## Goal
 
-Test `turtlebot_control()` independently of A* route selection, LiDAR passability, and obstacle avoidance. Use the **obstacle-free** Gazebo world. The test injects a known path into `self.full_path` and temporarily bypasses perception. **Do not submit with the test mode enabled.**
+Test the **pure-pursuit baseline** of `turtlebot_control()` independently of A* route selection, LiDAR passability, corridor-centering PID, and obstacle avoidance. Use the **obstacle-free** Gazebo world. The test injects a known path into `self.full_path` and temporarily bypasses perception. **Do not submit with the test mode enabled.**
 
 ## Test routes
 
@@ -123,6 +123,8 @@ def obstacle_avoided_target(self, robot_pos: Coord, seg_dir_yaw: float) -> Coord
 ```
 
 These bypasses are **only for the obstacle-free controller tests**. They are not collision avoidance and must not be enabled for the obstacle-containing world.
+
+**LiDAR centering must be disabled in all three isolated debug routes** (set its confidence/weight to zero or bypass the centering helper only when `self.controller_test` is set). This ensures the controller test passes without requiring scan geometry. After these tests pass, evaluate the centering correction separately using real `/scan` data and the normal navigator; do not set the centering weight permanently to zero.
 
 ## 3. Implement/configure the controller
 
@@ -245,7 +247,7 @@ Look for: large initial heading error, lateral drift, overshoot at nodes, oscill
 
 ## 10. Quick handoff
 
-When the short tests and (ideally) the long route pass, share the chosen PID/lookahead/speed parameters, a short video or logs, and any observed failures with the perception and planning teammates. They should then be able to call `turtlebot_control()` with obstacle-aware targets without changing its interface.
+When the short tests and (ideally) the long route pass, share the chosen PID/lookahead/speed parameters, a short video or logs, and any observed failures with the perception and planning teammates. They should then be able to call `turtlebot_control()` with obstacle-aware targets without changing its interface. The proposed LiDAR centering layer is integrated and validated afterward, not simulated by these three paths.
 
 ## Why the longer route is useful
 

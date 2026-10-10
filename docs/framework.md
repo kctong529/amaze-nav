@@ -40,7 +40,7 @@ The course supplies a partially implemented `navigator.py`. **A* graph search al
 | `angle_wrap()` | Normalize angle into ±π | Provided |
 | `yaw_from_quat()` | Extract heading from quaternion | Provided |
 
-Configure `lookahead_dist`, `v_max`, `w_max`, and optionally PID gains in the constructor. The suggested controller blends pure pursuit with PID, but PID is optional.
+Configure `lookahead_dist`, `v_max`, `w_max`, and optionally PID gains in the constructor. The template suggests pure pursuit with optional PID. Our proposed design keeps pure pursuit as the baseline and uses a confidence-weighted LiDAR cross-track correction only where side clearances are trustworthy. This is a team proposal, not provided template behavior; see [methodology](methodology.md#proposed-baseline-path-tracking-with-lidar-corridor-centering).
 
 ## Main state machine
 

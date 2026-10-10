@@ -6,6 +6,8 @@
 
 ## What counts as ground truth?
 
+In addition to a `P/B/U` judgment, optionally note whether visible side boundaries support reliable corridor-centering measurements. This is diagnostic geometry, **not** a substitute for the physical-traversability label and not data to hard-code into the submitted navigator.
+
 For this survey, an edge is **passable** when the TurtleBot can traverse between its adjacent node centers inside the intended corridor, with safe clearance and no contact, under careful manual control. An edge is **blocked** only if direct inspection and repeated attempts give convincing evidence that no collision-free route exists for the robot footprint. A failed drive, poor steering, or missing LiDAR information **does not prove blockage**. Mark such cases **uncertain**, and leave them out of binary evaluation until investigated.
 
 Record observations separately for **A → B** and **B → A** where feasible. The underlying obstacle geometry should be the same, but visibility, access, turning space, and driving outcomes can differ by direction. Do not label a geometrically passable edge blocked solely because the current controller cannot traverse it.

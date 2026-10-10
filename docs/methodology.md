@@ -6,6 +6,8 @@
 
 **Status: design discussion, not a finalized algorithm.** The 5 × 5 graph gives candidate links, not a prerecorded obstacle map. The challenge is to distinguish a truly blocked edge from a passage with a safe path around obstacles.
 
+> **Specification vs. enhancement:** The provided navigator expects `obstacle_avoided_target()` to select an obstacle-aware lookahead target and `turtlebot_control()` / `publish_cmd()` to command `/cmd_vel`. LiDAR-based corridor-centering PID is an **optional addition**, not a replacement for those required functions.
+
 ## Why front-range thresholds are insufficient
 
 The nearest return directly ahead can indicate an obstacle but cannot distinguish a fully blocked corridor from one with lateral clearance. Angled, staggered, and occluding obstacles complicate identifying an actual bottleneck. A pair of ranges separated by angle Δθ obeys the cosine rule:
@@ -64,6 +66,36 @@ Optionally start a fresh, **world-fixed** obstacle-point buffer when committing 
 ### Occupancy grid if experiments demand it
 
 An edge-local grid tracks **occupied**, **observed free**, and **unknown** cells, using ray traversal as well as endpoints. Optionally fuse repeated scans using clamped log-odds occupancy updates; inflate obstacles and check free-space connectivity. This is more principled for unknown space, but likely overkill for the initial two-day implementation.
+
+## Proposed baseline: path tracking with LiDAR corridor centering
+
+**Design proposal, not implemented behavior.** When the nominal path is unobstructed, use pure pursuit as the primary controller and a *confidence-weighted lateral centering correction* from LiDAR. This can still help when an obstacle is off to the side: the robot should not abandon the planned graph edge just because a side return is close.
+
+Given reliable, approximately perpendicular left/right corridor clearances `d_L` and `d_R` measured in an **edge-aligned frame**, define:
+
+$$e_c=\frac{d_L-d_R}{2}$$
+
+A positive `e_c` indicates more room to the left; a positive angular correction should turn the robot left, assuming ROS positive yaw is counterclockwise. This sign must be checked in Gazebo. Do **not** directly assume raw `/scan` indices 90 and 270 are perpendicular side distances; compute ray angles from `angle_min` and `angle_increment`, transform points into the segment frame, and reject unsuitable boundaries.
+
+The optional centering PID produces
+
+$$\omega_c=K_p e_c+K_i\int e_c\,dt+K_d\frac{de_c}{dt}$$
+
+and the tracking controller produces `ω_PP` (for conventional pure pursuit, `ω_PP = 2v sin(α)/L_d`). Proposed combined command:
+
+$$\omega_{cmd}=\mathrm{clip}(\omega_{PP}+\lambda_{confidence}\omega_c,-\omega_{max},\omega_{max})$$
+
+Start with `K_i = K_d = 0`; tune only if repeated runs justify additional terms. Unlike a weighted average of two angular velocities, the additive correction leaves normal pure-pursuit steering intact when the centering correction is zero. `λ_confidence` should be **zero** when side-wall geometry is missing, ambiguous, asymmetric due to a junction, or unreliable, and reduced near graph-node turns. Reset or freeze PID integral/derivative state when the correction is disabled; clamp velocity and apply independent immediate-collision checks.
+
+**Obstacles directly on the intended trajectory are a different situation:** use gap/trajectory detection to select a reachable, collision-checked temporary target in `obstacle_avoided_target()`. A midpoint between two returns is only a candidate, not proof of a feasible trajectory. `is_passable()` must distinguish genuinely blocked corridors from temporarily unknown ones. Do not let blending override an emergency stop.
+
+### Interface for independent work
+
+- **Ki Chun (perception):** estimate `d_L`, `d_R`, their validity/confidence, and any local obstacle/trajectory clearance; provide a small shared helper or state object.
+- **Shaan (control):** track the chosen target with pure pursuit, optionally add the centering PID correction when valid, and enforce stopping/velocity constraints. Keep the provided `turtlebot_control()` signature; a helper or cached perception result can supply lateral error and confidence.
+- **Nhan (planning):** retain graph/state-machine ownership; turning and segment transitions must signal when centering is unreliable so it does not fight the next waypoint.
+
+For standalone controller tests, **disable LiDAR centering (`λ_confidence = 0`)** so the mocked obstacle-free paths validate pure pursuit independently. Later repeat with centering enabled in the obstacle-free world to detect heading/offset oscillation and corner interference. See [controller debug](controller-debug.md) and [navigator tests](testing.md).
 
 ## Share perception with target selection
 

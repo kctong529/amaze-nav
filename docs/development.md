@@ -9,7 +9,7 @@
 | Phase | Primary lead | Supporting work | Shared checkpoint |
 |---|---|---|---|
 | **1. Skeleton and baseline** | Shaan: [controller debug](controller-debug.md) (`straight`, `turn`, then `loop`) | Vo Dinh Nhan: complete `plan_from()`; Ki Chun: LiDAR visualization | Robot follows nodes on obstacle-free track; scans visible |
-| **2. First obstacle** | Ki Chun: passability | Shaan: avoidance target; Vo Dinh Nhan: blocked-edge transitions | Robot either passes a simple obstacle safely or replans correctly |
+| **2. First obstacle** | Ki Chun: passability + side-clearance/confidence estimate | Shaan: gate LiDAR centering + avoidance target; Vo Dinh Nhan: blocked-edge transitions | Robot either passes a simple obstacle safely or replans correctly |
 | **3. Integration** | Vo Dinh Nhan: state-machine tests | Ki Chun + Shaan: perception/controller refinements | No contradictory perception/steering outcomes |
 | **4. Robustness** | **All three** | Repeat trials, tune margins, investigate occlusion and narrow passages | Document success rate, collision failures, and timing |
 | **5. Submission** | **All three** | Review code, record Gazebo runs, prepare gala slides | Reproducible result from the submitted code |
@@ -53,7 +53,7 @@ Parallel work is useful, but **integrate the first working baseline on Day 1**. 
 
 1. **Confirm or swap the proposed leads.**
 2. Start three parallel tasks directly: [mocked-path obstacle-free controller tests](controller-debug.md), `plan_from()`, and LiDAR visualization.
-3. Agree on coordinate frames and how perception hands obstacle information to avoidance.
+3. Agree on coordinate frames and a tiny perception-control interface (`d_L`, `d_R`, confidence/validity, clearance). Tune pure pursuit first with centering disabled, then integrate the lateral correction.
 4. Combine the first working changes on Day 1 and demonstrate one successful edge traversal before expanding complexity.
 5. Keep a short shared log of experiments, parameter values, failures, and improvements; this will also help with the project gala and optional effort documentation.
 

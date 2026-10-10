@@ -8,7 +8,7 @@
 
 ## Controller-only testing (before integration)
 
-For Shaan’s independent control work, use [controller-debug.md](controller-debug.md) instead of these obstacle-world acceptance tests. It defines the `AMAZE_NAV_CONTROLLER_TEST` switch, exact teleport poses, and mocked `straight`, `turn`, and `loop` paths. The 18-waypoint `loop` explicitly preserves all intermediate graph nodes and validates every consecutive edge with `GridGraph.has_edge()`. Perception bypasses are **test-only** and should not be used for the obstacle-containing world.
+For Shaan’s independent control work, use [controller-debug.md](controller-debug.md) instead of these obstacle-world acceptance tests. It defines the `AMAZE_NAV_CONTROLLER_TEST` switch, exact teleport poses, and mocked `straight`, `turn`, and `loop` paths. The 18-waypoint `loop` explicitly preserves all intermediate graph nodes and validates every consecutive edge with `GridGraph.has_edge()`. Perception bypasses are **test-only** and should not be used for the obstacle-containing world. Disable the proposed LiDAR centering correction for these isolated pure-pursuit runs (`λ_confidence = 0`); evaluate centering separately after integration.
 
 ## Teleport-Based Smoke Tests
 
@@ -84,6 +84,14 @@ ros2 service call /set_entity_state gazebo_msgs/srv/SetEntityState "{state: {nam
 Set `self.start_pos = (6.408, -4.272)`. This orientation faces `−Y` (`yaw = −π/2`) toward `(6.408, -5.696)`.
 
 **Important test setup:** Teleportation and changing `self.start_pos` **do not guarantee the A* planner chooses the proposed edge**—it may select another equally short route to the default goal. For a focused test, temporarily direct an isolated edge test/harness or a test-only waypoint path from A to B (e.g., temporarily set the test goal to B and confirm the chosen path). Restore the original goal, template settings, and graph for final runs; do not hard-code blocked edges or fixed obstacle locations into the submitted solution. Inspect `/odom` after teleporting: the simulator state, odometry, and navigator's planned start must agree before interpreting clearance results.
+
+**Additional LiDAR-centering acceptance checks:**
+
+- [ ] On a well-observed straight corridor, verify `d_L`, `d_R`, the signed centering error and confidence against RViz geometry.
+- [ ] Confirm the correction steers toward the side with more clearance without losing graph-path progress.
+- [ ] Confirm centering is disabled at junctions/90° turns or when one boundary is not reliably observed.
+- [ ] Compare pure pursuit alone with corrected steering over repeated runs: lateral deviation, oscillation, time, and minimum clearance.
+- [ ] Immediate collision-stop logic always overrides the blended steering.
 
 **Navigator perception acceptance checks for each priority edge:**
 

@@ -6,6 +6,8 @@
 
 ## What to Monitor in RViz (and Other Debug Views)
 
+For the proposed LiDAR centering controller, log or visualize: left and right **segment-perpendicular** clearance, signed lateral centering error, confidence/validity, `ω_PP`, weighted `ω_c`, combined `/cmd_vel` angular command, and whether centering is suppressed near a node/turn. These are **proposed diagnostics** and require new publishers/logs; RViz does not show these values automatically. Use `rqt_plot` for numeric time series if published.
+
 **Start with available ROS data; only add custom markers when they help.** The provided `navigator.py` subscribes to `/scan` and `/odom` and publishes `/cmd_vel`, but **does not publish** a `nav_msgs/Path`, occupancy grid, or RViz obstacle/target markers. The template uses OpenCV `draw_scene()` for its graph and planned path. RViz therefore will not show those custom objects unless we explicitly publish corresponding visualization messages.
 
 | Workstream | RViz display / topic | What to verify |
