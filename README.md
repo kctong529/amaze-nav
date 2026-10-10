@@ -22,7 +22,8 @@ The provided navigator uses `FOLLOW → BACKTRACK → REPLAN → FOLLOW` for blo
 - [Perception & navigation methodology](docs/methodology.md) — gap detection, point clouds, trajectory clearance, occupancy-grid alternatives, safety and integration.
 - [Team responsibilities](docs/tasks.md) — suggested owners, deliverables, definitions of done, interface agreements.
 - [Two-day implementation plan](docs/development.md) — integration sequence, priorities, risks, lightweight collaboration.
-- [Teleport & clearance test suite](docs/testing.md) — ready-to-use commands, four selected edges, acceptance checks.
+- [Edge passability ground-truth survey](docs/edge-ground-truth.md) — manually investigate all 40 edges and record evidence before evaluating perception.
+- [Navigator acceptance tests](docs/testing.md) — repeatable teleport tests, four priority edges, integration checks.
 - [RViz & debugging](docs/debugging.md) — available topics, optional markers, and data to monitor.
 
 ## Quick start
@@ -35,7 +36,7 @@ source install/setup.bash
 ros2 launch vmc2_project project.launch.py
 ```
 
-Start with the **obstacle-free** world and use the supplied launch setup to select the environment. See [teleport tests](docs/testing.md) for short experiments and the requirement to update `self.start_pos` after teleporting.
+Start with the **obstacle-free** world and use the supplied launch setup to select the environment. See [the manual survey](docs/edge-ground-truth.md) for teleoperated exploration or [navigator tests](docs/testing.md) for controlled acceptance tests and the requirement to update `self.start_pos` after teleporting.
 
 ## Targets
 

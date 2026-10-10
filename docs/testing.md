@@ -1,8 +1,10 @@
 # Teleport-based testing and acceptance
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Teleport tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 ---
+
+**Scope:** This document validates the implemented navigator, including perception decisions, control, and replanning. For **manual teleoperation, ROS bag collection, and evidence-based P/B/U labels of all 40 edges**, use the [ground-truth survey](edge-ground-truth.md). Do not treat the four cases below as a complete ground-truth inventory.
 
 ## Teleport-Based Smoke Tests
 
@@ -30,9 +32,9 @@ ros2 service call /set_entity_state gazebo_msgs/srv/SetEntityState   "{state: {n
 
 Use `self.start_pos = (4.984, -4.272)` for this test. The PDF also supplies a teleport command to checkpoint 3 `(7.120, -5.696)`; that point is the template's goal, so it is generally less useful for testing an ordinary edge traversal.
 
-## Edge-Specific Perception and Clearance Tests
+## Four Priority Navigator Tests
 
-Rather than relying only on checkpoint 1, use the following **four directed graph edges** as a repeatable perception test suite. These are proposed test cases selected by the team; whether and where they contain a traversable gap must be established from the actual obstacle world and LiDAR data, not assumed from the graph coordinates alone.
+Rather than relying only on checkpoint 1, use the following **four directed graph edges** as a repeatable perception test suite. These are proposed repeatable acceptance cases, selected by the team; whether and where they contain a traversable gap must be established from the actual obstacle world and LiDAR data, not assumed from the graph coordinates alone.
 
 | Order | Directed edge A → B (metres) | Teleport position (A) | Initial heading | Purpose |
 |---|---|---|---|---|
@@ -79,7 +81,7 @@ Set `self.start_pos = (6.408, -4.272)`. This orientation faces `−Y` (`yaw = �
 
 **Important test setup:** Teleportation and changing `self.start_pos` **do not guarantee the A* planner chooses the proposed edge**—it may select another equally short route to the default goal. For a focused test, temporarily direct an isolated edge test/harness or a test-only waypoint path from A to B (e.g., temporarily set the test goal to B and confirm the chosen path). Restore the original goal, template settings, and graph for final runs; do not hard-code blocked edges or fixed obstacle locations into the submitted solution. Inspect `/odom` after teleporting: the simulator state, odometry, and navigator's planned start must agree before interpreting clearance results.
 
-**Perception definition of done for each edge:**
+**Navigator perception acceptance checks for each priority edge:**
 
 - [ ] RViz `/scan` geometry matches Gazebo at the initial pose; check the heading especially for Test 4.
 - [ ] Visualize LiDAR point cloud, selected gap/candidate trajectory, and robot clearance footprint in a consistent frame.
@@ -90,7 +92,7 @@ Set `self.start_pos = (6.408, -4.272)`. This orientation faces `−Y` (`yaw = �
 
 For RViz, the most helpful additional debug objects would be an **active-edge line**, **candidate trajectory**, **closest-obstacle/bottleneck marker**, and **effective robot-radius circle**. These are proposed marker publishers, not topics already present in the template; the existing `/scan` and `/odom` can be inspected without adding them.
 
-**Suggested smoke-test sequence**
+**Suggested navigator smoke-test sequence**
 
 1. Launch the obstacle-free world and teleport to checkpoint 1; confirm `/odom` reflects the new pose.
 2. Start the navigator with a matching `self.start_pos`; verify the planned waypoint list and drive one graph edge.
@@ -105,3 +107,5 @@ If your ROS/Gazebo environment uses a different model name, inspect the spawned 
 Keep one compact shared note or chat thread for tests—no issue tracker required. For each useful run, record: **(a)** directed edge and teleport pose, **(b)** world and changed tuning parameters, **(c)** pass/fail and any collision or false blockage, and **(d)** a screenshot or short recording when it clarifies a problem. For the four perception cases in §8.1, note the estimated clearance and whether the result is repeatable. This is enough to guide debugging and later document the demo.
 
 For display setup, see [RViz & debugging](debugging.md).
+
+**Comparison with ground truth:** Before interpreting an `is_passable()` result as correct or incorrect, consult the corresponding evidence-based label in [the survey](edge-ground-truth.md). Keep unknown (`U`) edges out of binary accuracy totals.

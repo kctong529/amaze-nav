@@ -1,6 +1,6 @@
 # RViz and debugging guide
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Teleport tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 ---
 
@@ -30,3 +30,5 @@
 **Minimal shared debug output worth adding later:** a target marker, a local obstacle marker collection, and optionally a `nav_msgs/Path` for the current A* plan. Publish all markers with valid header frames and timestamps. Diagnostic text logs should include the active edge, navigation mode, passability assessment, and key clearance values. These additions are development aids, not requirements imposed by the supplied template.
 
 For precise edge starting poses and scenarios, see [teleport tests](testing.md).
+
+For manual edge exploration, rosbag recording, and ground-truth evidence, see [the 40-edge survey](edge-ground-truth.md). For RViz acceptance during autonomous navigation, see [navigator tests](testing.md).

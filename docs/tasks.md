@@ -1,6 +1,6 @@
 # Suggested task division
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Teleport tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 ---
 
@@ -102,3 +102,5 @@ Before implementing the workstreams independently, agree on these contracts in a
 A simple agreed helper such as `get_local_obstacles()` (returning points in a documented frame) is a useful first interface. A richer shared result can be introduced later if needed.
 
 See also [two-day sequencing and risk management](development.md), [test acceptance cases](testing.md), and [RViz diagnostics](debugging.md).
+
+**Perception evidence:** Ki Chun can collect the initial [edge-ground-truth survey](edge-ground-truth.md) using manual teleoperation (without running the navigator), with teammates helping on ambiguous edges. Ground-truth labels are established independently from `is_passable()` predictions. A useful acceptance result is a comparison against confirmed P/B edges, not a claim that every unobserved edge is blocked. See the [four automated navigator checks](testing.md#four-priority-navigator-tests).

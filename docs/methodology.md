@@ -1,6 +1,6 @@
 # Perception, obstacle avoidance, and navigation methodology
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Teleport tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 ---
 
@@ -70,6 +70,10 @@ An edge-local grid tracks **occupied**, **observed free**, and **unknown** cells
 `is_passable()` and `obstacle_avoided_target()` should not make contradictory decisions. A possible shared helper generates candidate paths (centerline, left and right offsets, or curves), estimates clearance to observed obstacles, tests motion feasibility and corridor bounds, and chooses a near-term lookahead point. An isolated clear point is not enough; a safe route must be connected and trackable.
 
 The boolean `is_passable()` cannot directly encode **clear / unknown / blocked**. Keep uncertainty as internal state or diagnostics. Returning true in an unknown situation must not cause motion into unseen or insufficiently cleared space: stop, rotate, or approach only when the immediate motion is known safe. Confirm blocked-edge decisions with adequate evidence rather than a single transient scan.
+
+## Ground truth versus runtime perception
+
+Use the [manual edge survey](edge-ground-truth.md) to establish evidence-based `P` / `B` / `U` labels independently of the algorithm. These observations are **evaluation data**, never a pre-recorded blocked-edge table for the submitted navigator. Evaluate false-blocked and false-passable decisions only on confirmed labels; investigate unknown edges separately. The four focused cases in [navigator tests](testing.md#four-priority-navigator-tests) are a smaller regression suite, not the whole maze.
 
 ## Incremental development recommendation
 

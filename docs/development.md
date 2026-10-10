@@ -1,6 +1,6 @@
 # Two-day implementation and integration plan
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Teleport tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 ---
 
@@ -22,10 +22,12 @@ Parallel work is useful, but **integrate the first working baseline on Day 1**. 
 
 | Time | Ki Chun — perception | Shaan — control | Vo Dinh Nhan — planning/integration | Joint milestone |
 |---|---|---|---|---|
-| **Day 1, first half** | Display valid LiDAR points and initial clearance checks | Get the robot to align and follow one edge in the obstacle-free world | Complete `plan_from()` and basic waypoint/state behavior | One edge traversed; scans visible |
+| **Day 1, first half** | Inspect LiDAR and survey selected edges manually; begin [ground truth](edge-ground-truth.md) | Get the robot to align and follow one edge in the obstacle-free world | Complete `plan_from()` and basic waypoint/state behavior | One edge traversed; scans visible |
 | **Day 1, second half** | Test first two clearance edges in [four selected edge tests](testing.md#edge-specific-perception-and-clearance-tests) | Add obstacle-aware target selection | Wire up blocked-edge transitions and run the first integration test | One obstacle case tested end-to-end |
-| **Day 2, first half** | Test remaining edges, especially the final challenge | Tune avoidance and stopping behavior | Fix state transitions and repeatability failures | Most difficult segment tested |
+| **Day 2, first half** | Compare detector on confirmed survey edges, prioritizing the final challenge | Tune avoidance and stopping behavior | Fix state transitions and repeatability failures | Most difficult segment tested |
 | **Day 2, second half** | Support tuning and capture scan/clearance evidence | Support full run and capture control evidence | Coordinate final full-maze tests | Stable submission, demo recording, and brief presentation |
+
+**Ground-truth timebox:** Survey as many of the 40 graph edges as practical, but do not sacrifice integration or the submission deadline to force a P/B label. Mark unresolved edges `U` and keep the label inventory in [the ground-truth protocol](edge-ground-truth.md). For full task acceptance, use [navigator tests](testing.md).
 
 **Practical working agreement:**
 
