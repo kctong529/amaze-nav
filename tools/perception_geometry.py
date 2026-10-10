@@ -184,3 +184,56 @@ def find_gaps(intervals):
         })
 
     return gaps
+
+
+def analyze_edge_slices(
+    edge_points,
+    edge_length,
+    slice_step=0.10,
+    slice_thickness=0.10,
+    cluster_max_gap=0.05,
+    cluster_min_points=3,
+):
+    """
+    Analyze candidate obstacle intervals and gaps along
+    an edge at regularly spaced cross-sections.
+
+    Returns a list of results for each slice.
+    """
+    if edge_length <= 0:
+        raise ValueError("edge_length must be positive")
+
+    if slice_step <= 0:
+        raise ValueError("slice_step must be positive")
+
+    positions = np.arange(
+        slice_step / 2,
+        edge_length,
+        slice_step,
+    )
+
+    results = []
+
+    for s0 in positions:
+        slice_points = extract_slice(
+            edge_points,
+            s0,
+            slice_thickness,
+        )
+
+        intervals = cluster_lateral_points(
+            slice_points,
+            max_gap=cluster_max_gap,
+            min_points=cluster_min_points,
+        )
+
+        gaps = find_gaps(intervals)
+
+        results.append({
+            "s": float(s0),
+            "point_count": len(slice_points),
+            "intervals": intervals,
+            "gaps": gaps,
+        })
+
+    return results

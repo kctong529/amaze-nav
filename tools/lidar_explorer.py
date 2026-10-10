@@ -17,6 +17,7 @@ from perception_geometry import (
     extract_slice,
     cluster_lateral_points,
     find_gaps,
+    analyze_edge_slices,
 )
 
 GRID_X = [0.712, 2.136, 3.560, 4.984, 6.408]
@@ -510,8 +511,9 @@ def draw_edge_frame(
     put_multiline_text(
         image,
         "Use [ and ] to move the slice\n"
-        "Use , and . to change the edge",
-        (15, size - 45),
+        "Use , and . to change the edge\n"
+        "Use p to log the latest slice profile",
+        (15, size - 60),
     )
 
     cv2.imshow(EDGE_WINDOW, image)
@@ -567,7 +569,6 @@ class LidarExplorer(Node):
         ))
 
         self.slice_s = 0.712
-
         self.last_log_time = self.get_clock().now()
 
         # Prepare both OpenCV windows.
@@ -597,6 +598,35 @@ class LidarExplorer(Node):
             f"Selected edge {self.edge_index + 1}/"
             f"{len(self.edges)}: {start} -> {end}"
         )
+        
+    def log_slice_profile(self):
+        if not self.latest_slice_results:
+            return
+
+        start, end = self.selected_edge
+
+        self.get_logger().info(
+            f"Width profile: {start} -> {end}"
+        )
+
+        for result in self.latest_slice_results:
+            gaps = result["gaps"]
+
+            if gaps:
+                gap_text = ", ".join(
+                    f"[{gap['left']:+.2f}, {gap['right']:+.2f}] "
+                    f"w={gap['width']:.3f}"
+                    for gap in gaps
+                )
+            else:
+                gap_text = "none observed"
+
+            self.get_logger().info(
+                f"s={result['s']:.2f} | "
+                f"points={result['point_count']:2d} | "
+                f"clusters={len(result['intervals'])} | "
+                f"gaps={gap_text}"
+            )
     
     def scan_callback(self, scan):
         """Receive a scan and retain it until its TF is available."""
@@ -663,6 +693,17 @@ class LidarExplorer(Node):
         )
 
         filtered_points = edge_points[near_edge]
+
+        slice_results = analyze_edge_slices(
+            filtered_points,
+            edge_length=edge_length,
+            slice_step=0.10,
+            slice_thickness=SLICE_THICKNESS,
+            cluster_max_gap=CLUSTER_MAX_GAP,
+            cluster_min_points=CLUSTER_MIN_POINTS,
+        )
+
+        self.latest_slice_results = slice_results
 
         # Select points belonging to the current cross-section.
         slice_points = extract_slice(
@@ -780,6 +821,9 @@ class LidarExplorer(Node):
 
             self.slice_s = 0.712
             self.log_selected_edge()
+
+        elif key == ord("p"):
+            self.log_slice_profile()
 
 
 def main():
