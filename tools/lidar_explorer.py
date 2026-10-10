@@ -19,6 +19,9 @@ from perception_geometry import (
     find_gaps,
 )
 
+GRID_X = [0.712, 2.136, 3.560, 4.984, 6.408]
+GRID_Y = [0.000, -1.424, -2.848, -4.272, -5.696]
+
 SENSOR_WINDOW = "LiDAR Explorer - Sensor Frame"
 ODOM_WINDOW = "LiDAR Explorer - Odom Frame"
 EDGE_WINDOW = "LiDAR Explorer - Edge Frame"
@@ -58,6 +61,47 @@ def scan_to_points(scan: LaserScan) -> np.ndarray:
         ranges[valid] * np.cos(angles[valid]),
         ranges[valid] * np.sin(angles[valid]),
     ))
+
+
+def generate_grid_edges():
+    edges = []
+
+    # Horizontal edges
+    for row in range(len(GRID_Y)):
+        for col in range(len(GRID_X) - 1):
+            edges.append((
+                (GRID_X[col], GRID_Y[row]),
+                (GRID_X[col + 1], GRID_Y[row]),
+            ))
+
+    # Vertical edges
+    for row in range(len(GRID_Y) - 1):
+        for col in range(len(GRID_X)):
+            edges.append((
+                (GRID_X[col], GRID_Y[row]),
+                (GRID_X[col], GRID_Y[row + 1]),
+            ))
+
+    return edges
+
+
+def put_multiline_text(
+    image, text, origin, font_scale=0.55,
+    color=(30, 30, 30), thickness=1, line_spacing=25,
+):
+    x, y = origin
+
+    for i, line in enumerate(text.splitlines()):
+        cv2.putText(
+            image,
+            line,
+            (x, y + i * line_spacing),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            font_scale,
+            color,
+            thickness,
+            cv2.LINE_AA,
+        )
 
 
 def draw_lidar_points(points, size=700, scale=150):
@@ -344,7 +388,7 @@ def draw_edge_frame(
 
     def to_pixel(s, t):
         return (
-            int(cx + t * scale),
+            int(cx - t * scale),
             int(cy - s * scale),
         )
 
@@ -463,14 +507,11 @@ def draw_edge_frame(
         2,
     )
 
-    cv2.putText(
+    put_multiline_text(
         image,
-        "Use [ and ] to move the slice",
-        (15, size - 20),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.55,
-        (30, 30, 30),
-        1,
+        "Use [ and ] to move the slice\n"
+        "Use , and . to change the edge",
+        (15, size - 45),
     )
 
     cv2.imshow(EDGE_WINDOW, image)
@@ -517,7 +558,15 @@ class LidarExplorer(Node):
         # Cross-section parameters.
         self.slice_thickness = SLICE_THICKNESS
         self.slice_step = SLICE_STEP
-        self.slice_s = EDGE_LENGTH / 2
+        self.edges = generate_grid_edges()
+
+        # Initially select the previously tested edge.
+        self.edge_index = self.edges.index((
+            (0.712, -2.848),
+            (2.136, -2.848),
+        ))
+
+        self.slice_s = 0.712
 
         self.last_log_time = self.get_clock().now()
 
@@ -537,6 +586,18 @@ class LidarExplorer(Node):
         # Process OpenCV GUI events independently of TF availability.
         self.create_timer(0.05, self.update_gui)
 
+    @property
+    def selected_edge(self):
+        return self.edges[self.edge_index]
+
+    def log_selected_edge(self):
+        start, end = self.selected_edge
+
+        self.get_logger().info(
+            f"Selected edge {self.edge_index + 1}/"
+            f"{len(self.edges)}: {start} -> {end}"
+        )
+    
     def scan_callback(self, scan):
         """Receive a scan and retain it until its TF is available."""
         self.received_scans += 1
@@ -582,17 +643,22 @@ class LidarExplorer(Node):
             transform.transform.rotation,
         )
 
-        # Convert LiDAR points to the selected edge's coordinates.
+        start, end = self.selected_edge
+
+        edge_length = float(np.linalg.norm(
+            np.asarray(end) - np.asarray(start)
+        ))
+
         edge_points = points_to_edge_frame(
             self.latest_world_points,
-            TEST_EDGE_START,
-            TEST_EDGE_END,
+            start,
+            end,
         )
 
         # Restrict the visualization to points near the edge.
         near_edge = (
             (edge_points[:, 0] >= -0.2)
-            & (edge_points[:, 0] <= EDGE_LENGTH + 0.2)
+            & (edge_points[:, 0] <= edge_length + 0.2)
             & (np.abs(edge_points[:, 1]) <= 1.0)
         )
 
@@ -621,8 +687,8 @@ class LidarExplorer(Node):
 
         sensor_st = points_to_edge_frame(
             np.asarray([sensor_xy]),
-            TEST_EDGE_START,
-            TEST_EDGE_END,
+            start,
+            end,
         )[0]
 
         # Draw the edge-aligned visualization.
@@ -689,7 +755,7 @@ class LidarExplorer(Node):
 
         if key == ord("]"):
             self.slice_s = min(
-                EDGE_LENGTH,
+                1.424,
                 self.slice_s + SLICE_STEP,
             )
 
@@ -698,6 +764,22 @@ class LidarExplorer(Node):
                 0.0,
                 self.slice_s - SLICE_STEP,
             )
+
+        elif key == ord("."):
+            self.edge_index = (
+                self.edge_index + 1
+            ) % len(self.edges)
+
+            self.slice_s = 0.712
+            self.log_selected_edge()
+
+        elif key == ord(","):
+            self.edge_index = (
+                self.edge_index - 1
+            ) % len(self.edges)
+
+            self.slice_s = 0.712
+            self.log_selected_edge()
 
 
 def main():
