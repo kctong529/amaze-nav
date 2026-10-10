@@ -12,10 +12,20 @@ from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from perception_geometry import transform_points_2d
-
+from perception_geometry import (
+    transform_points_2d,
+    points_to_edge_frame,
+)
 
 SENSOR_WINDOW = "LiDAR Explorer - Sensor Frame"
 ODOM_WINDOW = "LiDAR Explorer - Odom Frame"
+
+TEST_EDGE_START = (0.712, -2.848)
+TEST_EDGE_END = (2.136, -2.848)
+
+# Inspect the passage halfway along the edge.
+SLICE_S = 0.712
+SLICE_THICKNESS = 0.10
 
 
 def scan_to_points(scan: LaserScan) -> np.ndarray:
@@ -101,7 +111,6 @@ def draw_lidar_points(points, size=700, scale=150):
     cv2.imshow(SENSOR_WINDOW, image)
 
 
-
 def draw_world_points(points, sensor_xy=None, size=700, scale=100):
     """
     Draw LiDAR points in the odom frame with a camera that
@@ -177,6 +186,23 @@ def draw_world_points(points, sensor_xy=None, size=700, scale=100):
     )
 
     cv2.imshow(ODOM_WINDOW, image)
+
+
+def extract_slice(edge_points, s0, thickness):
+    """
+    Select LiDAR points within a cross-sectional strip.
+
+    s0: position along the edge in metres
+    thickness: total strip thickness in metres
+    """
+    if thickness <= 0:
+        raise ValueError("Slice thickness must be positive")
+
+    edge_points = np.asarray(edge_points, dtype=float)
+
+    mask = np.abs(edge_points[:, 0] - s0) <= thickness / 2
+
+    return edge_points[mask]
 
 
 class LidarExplorer(Node):
@@ -275,6 +301,24 @@ class LidarExplorer(Node):
             points,
             transform.transform.translation,
             transform.transform.rotation,
+        )
+
+        edge_points = points_to_edge_frame(
+            self.latest_world_points,
+            TEST_EDGE_START,
+            TEST_EDGE_END,
+        )
+
+        slice_points = extract_slice(
+            edge_points,
+            SLICE_S,
+            SLICE_THICKNESS,
+        )
+
+        self.get_logger().info(
+            f"Cross-section at s={SLICE_S:.3f} m: "
+            f"{len(slice_points)} points",
+            throttle_duration_sec=2.0,
         )
 
         draw_world_points(
