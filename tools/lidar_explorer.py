@@ -11,21 +11,23 @@ from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from perception_geometry import transform_points_2d
 from perception_geometry import (
     transform_points_2d,
     points_to_edge_frame,
+    extract_slice,
 )
 
 SENSOR_WINDOW = "LiDAR Explorer - Sensor Frame"
 ODOM_WINDOW = "LiDAR Explorer - Odom Frame"
+EDGE_WINDOW = "LiDAR Explorer - Edge Frame"
 
 TEST_EDGE_START = (0.712, -2.848)
 TEST_EDGE_END = (2.136, -2.848)
 
-# Inspect the passage halfway along the edge.
-SLICE_S = 0.712
+EDGE_LENGTH = 1.424
+
 SLICE_THICKNESS = 0.10
+SLICE_STEP = 0.10
 
 
 def scan_to_points(scan: LaserScan) -> np.ndarray:
@@ -188,21 +190,152 @@ def draw_world_points(points, sensor_xy=None, size=700, scale=100):
     cv2.imshow(ODOM_WINDOW, image)
 
 
-def extract_slice(edge_points, s0, thickness):
+def draw_edge_frame(
+    edge_points,
+    slice_points,
+    slice_s,
+    robot_st=None,
+    size=700,
+    scale=300,
+):
     """
-    Select LiDAR points within a cross-sectional strip.
+    Visualize LiDAR points in edge-aligned coordinates.
 
-    s0: position along the edge in metres
-    thickness: total strip thickness in metres
+    Vertical axis: s (distance along edge)
+    Horizontal axis: t (lateral offset)
+
+    Positive s points upward.
+    Positive t points rightward.
     """
-    if thickness <= 0:
-        raise ValueError("Slice thickness must be positive")
+    image = np.full((size, size, 3), 255, dtype=np.uint8)
 
-    edge_points = np.asarray(edge_points, dtype=float)
+    # Place the start of the edge near the bottom.
+    cx = size // 2
+    cy = size - 100
 
-    mask = np.abs(edge_points[:, 0] - s0) <= thickness / 2
+    def to_pixel(s, t):
+        return (
+            int(cx + t * scale),
+            int(cy - s * scale),
+        )
 
-    return edge_points[mask]
+    # Display the edge centerline.
+    start_px = to_pixel(0.0, 0.0)
+    end_px = to_pixel(EDGE_LENGTH, 0.0)
+
+    cv2.line(
+        image,
+        start_px,
+        end_px,
+        (255, 0, 0),
+        2,
+    )
+
+    # Draw a reference line at t=0.
+    cv2.line(
+        image,
+        (cx, 0),
+        (cx, size - 1),
+        (220, 220, 220),
+        1,
+    )
+
+    # Highlight the cross-sectional band.
+    half = SLICE_THICKNESS / 2
+
+    _, upper_y = to_pixel(slice_s + half, 0)
+    _, lower_y = to_pixel(slice_s - half, 0)
+
+    cv2.rectangle(
+        image,
+        (0, upper_y),
+        (size - 1, lower_y),
+        (230, 255, 230),
+        -1,
+    )
+
+    # Draw the selected cross-section.
+    _, slice_y = to_pixel(slice_s, 0)
+
+    cv2.line(
+        image,
+        (0, slice_y),
+        (size - 1, slice_y),
+        (0, 160, 0),
+        1,
+    )
+
+    # Draw all nearby points in orange.
+    for s, t in edge_points:
+        px, py = to_pixel(s, t)
+
+        if 0 <= px < size and 0 <= py < size:
+            cv2.circle(
+                image,
+                (px, py),
+                2,
+                (0, 140, 255),
+                -1,
+            )
+
+    # Highlight selected points in green.
+    for s, t in slice_points:
+        px, py = to_pixel(s, t)
+
+        if 0 <= px < size and 0 <= py < size:
+            cv2.circle(
+                image,
+                (px, py),
+                4,
+                (0, 170, 0),
+                -1,
+            )
+
+    # Draw the robot in edge coordinates.
+    if robot_st is not None:
+        px, py = to_pixel(*robot_st)
+
+        if 0 <= px < size and 0 <= py < size:
+            cv2.circle(
+                image,
+                (px, py),
+                7,
+                (255, 0, 0),
+                -1,
+            )
+
+    # Labels.
+    cv2.putText(
+        image,
+        f"Slice s={slice_s:.2f} m",
+        (15, 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.65,
+        (30, 30, 30),
+        2,
+    )
+
+    cv2.putText(
+        image,
+        f"Selected points: {len(slice_points)}",
+        (15, 60),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.65,
+        (30, 30, 30),
+        2,
+    )
+
+    cv2.putText(
+        image,
+        "Use [ and ] to move the slice",
+        (15, size - 20),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.55,
+        (30, 30, 30),
+        1,
+    )
+
+    cv2.imshow(EDGE_WINDOW, image)
 
 
 class LidarExplorer(Node):
@@ -243,6 +376,11 @@ class LidarExplorer(Node):
         self.transformed_scans = 0
         self.dropped_scans = 0
 
+        # Cross-section parameters.
+        self.slice_thickness = SLICE_THICKNESS
+        self.slice_step = SLICE_STEP
+        self.slice_s = EDGE_LENGTH / 2
+
         self.last_log_time = self.get_clock().now()
 
         # Prepare both OpenCV windows.
@@ -251,6 +389,9 @@ class LidarExplorer(Node):
 
         cv2.moveWindow(SENSOR_WINDOW, 40, 40)
         cv2.moveWindow(ODOM_WINDOW, 780, 40)
+
+        cv2.namedWindow(EDGE_WINDOW, cv2.WINDOW_NORMAL)
+        cv2.moveWindow(EDGE_WINDOW, 1520, 40)
 
         # Check for available TF data at 20 Hz.
         self.create_timer(0.05, self.process_pending_scan)
@@ -288,8 +429,8 @@ class LidarExplorer(Node):
             )
 
         except TransformException:
-            # The TF broadcaster may be slightly behind the scan.
-            # Retry on the next timer tick.
+            # TF may be slightly behind the scan.
+            # Retry when the timer fires again.
             return
 
         # Matching transform found.
@@ -303,30 +444,53 @@ class LidarExplorer(Node):
             transform.transform.rotation,
         )
 
+        # Convert LiDAR points to the selected edge's coordinates.
         edge_points = points_to_edge_frame(
             self.latest_world_points,
             TEST_EDGE_START,
             TEST_EDGE_END,
         )
 
+        # Restrict the visualization to points near the edge.
+        near_edge = (
+            (edge_points[:, 0] >= -0.2)
+            & (edge_points[:, 0] <= EDGE_LENGTH + 0.2)
+            & (np.abs(edge_points[:, 1]) <= 1.0)
+        )
+
+        filtered_points = edge_points[near_edge]
+
+        # Select points belonging to the current cross-section.
         slice_points = extract_slice(
-            edge_points,
-            SLICE_S,
+            filtered_points,
+            self.slice_s,
             SLICE_THICKNESS,
         )
 
-        self.get_logger().info(
-            f"Cross-section at s={SLICE_S:.3f} m: "
-            f"{len(slice_points)} points",
-            throttle_duration_sec=2.0,
+        # Convert the LiDAR sensor's position into edge coordinates.
+        sensor_xy = (
+            transform.transform.translation.x,
+            transform.transform.translation.y,
         )
 
+        sensor_st = points_to_edge_frame(
+            np.asarray([sensor_xy]),
+            TEST_EDGE_START,
+            TEST_EDGE_END,
+        )[0]
+
+        # Draw the edge-aligned visualization.
+        draw_edge_frame(
+            filtered_points,
+            slice_points,
+            self.slice_s,
+            robot_st=sensor_st,
+        )
+
+        # Draw the odometry-frame visualization.
         draw_world_points(
             self.latest_world_points,
-            sensor_xy=(
-                transform.transform.translation.x,
-                transform.transform.translation.y,
-            ),
+            sensor_xy=sensor_xy,
         )
 
         self.transformed_scans += 1
@@ -334,6 +498,12 @@ class LidarExplorer(Node):
         self.get_logger().info(
             "First successful timestamp-aligned TF transform",
             once=True,
+        )
+
+        self.get_logger().info(
+            f"Cross-section at s={self.slice_s:.3f} m: "
+            f"{len(slice_points)} points",
+            throttle_duration_sec=2.0,
         )
 
     def odom_callback(self, msg):
@@ -367,8 +537,19 @@ class LidarExplorer(Node):
         self.last_log_time = self.get_clock().now()
 
     def update_gui(self):
-        """Allow OpenCV to process window events."""
-        cv2.waitKey(1)
+        key = cv2.waitKey(1) & 0xFF
+
+        if key == ord("]"):
+            self.slice_s = min(
+                EDGE_LENGTH,
+                self.slice_s + SLICE_STEP,
+            )
+
+        elif key == ord("["):
+            self.slice_s = max(
+                0.0,
+                self.slice_s - SLICE_STEP,
+            )
 
 
 def main():
@@ -384,7 +565,9 @@ def main():
     finally:
         cv2.destroyAllWindows()
         node.destroy_node()
-        rclpy.shutdown()
+
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

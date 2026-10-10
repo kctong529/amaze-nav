@@ -71,3 +71,20 @@ def points_to_edge_frame(points, start, end):
     t = relative @ normal
 
     return np.column_stack((s, t))
+
+
+def extract_slice(edge_points, s0, thickness):
+    """
+    Select LiDAR points within a cross-sectional strip.
+
+    s0: position along the edge in metres
+    thickness: total strip thickness in metres
+    """
+    if thickness <= 0:
+        raise ValueError("Slice thickness must be positive")
+
+    edge_points = np.asarray(edge_points, dtype=float)
+
+    mask = np.abs(edge_points[:, 0] - s0) <= thickness / 2
+
+    return edge_points[mask]
