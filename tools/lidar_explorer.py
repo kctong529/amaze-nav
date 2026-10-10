@@ -6,6 +6,7 @@ import cv2
 
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
+from nav_msgs.msg import Odometry
 
 
 def scan_to_points(scan: LaserScan) -> np.ndarray:
@@ -104,12 +105,35 @@ class LidarExplorer(Node):
             10,
         )
 
+        self.latest_odom = None
+
+        self.create_subscription(
+            Odometry,
+            "/odom",
+            self.odom_callback,
+            10,
+        )
+
         self.last_log_time = self.get_clock().now()
+
+    def odom_callback(self, msg):
+        self.latest_odom = msg
     
     def scan_callback(self, scan):
         points = scan_to_points(scan)
-
         draw_lidar_points(points)
+
+        if self.latest_odom is None:
+            return
+
+        pose = self.latest_odom.pose.pose
+        position = pose.position
+        q = pose.orientation
+
+        yaw = np.arctan2(
+            2.0 * (q.w * q.z + q.x * q.y),
+            1.0 - 2.0 * (q.y * q.y + q.z * q.z),
+        )
 
         elapsed = (
             self.get_clock().now() - self.last_log_time
@@ -117,8 +141,10 @@ class LidarExplorer(Node):
 
         if elapsed >= 1.0:
             self.get_logger().info(
-                f"{len(points)} valid LiDAR points, "
-                f"frame={scan.header.frame_id}"
+                f"position=({position.x:.3f}, {position.y:.3f}), "
+                f"yaw={np.degrees(yaw):.1f}°, "
+                f"scan frame={scan.header.frame_id}, "
+                f"odom frame={self.latest_odom.header.frame_id}"
             )
             self.last_log_time = self.get_clock().now()
 
