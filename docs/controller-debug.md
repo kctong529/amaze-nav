@@ -1,6 +1,6 @@
 # Controller-only debug guide (Shaan)
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Setup](setup.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 ## Goal
 
@@ -136,7 +136,7 @@ Recommended controller behavior at corners: reduce or eliminate forward speed wh
 
 ## 4. Start the obstacle-free simulation
 
-Install the course's Gazebo models and build/source the `vmc2_project` ROS 2 package according to the assignment instructions. Configure the course launch file to use `project_track_no_obs` rather than `project_track` (the exact launch option depends on your local course package).
+Follow [Environment setup](setup.md) to install the models and ROS 2 package already included in this repository, configure model paths, and build/source the workspace. Configure the course launch file to use `project_track_no_obs` rather than `project_track` (the exact launch option depends on your local course package).
 
 ```bash
 ros2 launch vmc2_project project.launch.py

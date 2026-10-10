@@ -1,8 +1,10 @@
 # Teleport-based testing and acceptance
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Setup](setup.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 ---
+
+**Prerequisite:** Complete [Environment setup](setup.md) first; the repository already contains the extracted models and ROS package.
 
 **Scope:** This document validates the implemented navigator, including perception decisions, control, and replanning. For **manual teleoperation, ROS bag collection, and evidence-based P/B/U labels of all 40 edges**, use the [ground-truth survey](edge-ground-truth.md). Do not treat the four cases below as a complete ground-truth inventory.
 

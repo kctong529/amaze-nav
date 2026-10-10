@@ -1,6 +1,6 @@
 # Edge Passability Ground-Truth Survey
 
-**Documentation:** [README](../README.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Setup](setup.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
 **Purpose:** Manually inspect **every one of the 40 undirected edges** in the provided 5 × 5 node graph and record evidence-based ground-truth passability labels *before* implementing `is_passable()`. This is a data-collection protocol, not a record of confirmed passability. **All entries start unclassified.**
 
@@ -16,14 +16,13 @@ Labels: `P` = confirmed traversable; `B` = convincingly physically blocked; `U` 
 
 ## 1. Prepare the environment
 
-1. Extract `project_track` and `project_track_no_obs` models to `~/.gazebo/models/`; use **the obstacle-containing world** for ground-truth classification. The obstacle-free world is useful only for checking teleoperation and sensing.
-2. Build/source the course workspace and launch Gazebo:
+1. Follow the [repository environment setup](setup.md) to install the **already-extracted** models from this repository, configure `GAZEBO_MODEL_PATH`, and build/source the included `vmc2_project` package. Use the **obstacle-containing** world for ground-truth classification; the obstacle-free model is only for checking sensing and manual control.
+2. Launch the simulation from a terminal with the workspace and model paths configured:
 
    ```bash
-   colcon build --packages-select vmc2_project
-   source install/setup.bash
    ros2 launch vmc2_project project.launch.py
    ```
+
 3. **Ensure `navigator.py` is not publishing commands** during teleoperation. The unfinished template can also fail if run as-is; inspect the launch configuration and disable the navigator node if it launches automatically. Keep Gazebo and the robot sensor publishers running. Do not run two `/cmd_vel` controllers at once.
 4. In another sourced terminal, confirm interfaces and start manual control (if the package is installed):
 
@@ -90,7 +89,7 @@ python3 teleport_edge.py 3 4 4 4
 # Copy and run the printed ros2 service call.
 ```
 
-**Note:** For manual driving, you do **not** need to change `self.start_pos`, because you are not running the navigator. If later running the navigator from a teleported start, the assignment requires setting `self.start_pos` to the same position. Teleporting to one node does not force A\* to choose a particular next edge.
+**Note:** For manual driving, you do **not** need to change `self.start_pos`, because you are not running the navigator. If later running the navigator from a teleported start, the assignment requires setting `self.start_pos` to the same position. Teleporting to one node does not force A* to choose a particular next edge.
 
 ## 3. Capture evidence and observations
 

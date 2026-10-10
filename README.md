@@ -18,6 +18,8 @@ The provided navigator uses `FOLLOW → BACKTRACK → REPLAN → FOLLOW` for blo
 
 ## Documentation
 
+- [Environment setup](docs/setup.md) — clone the repository, configure ROS 2 and Gazebo model paths, build, launch, and troubleshoot.
+
 - [Provided framework & function guide](docs/framework.md) — what's already implemented versus TODOs, modes, ROS interfaces.
 - [Perception & navigation methodology](docs/methodology.md) — two-stage passability (cross-sectional gap screening + short-horizon motion clearance), pure pursuit, optional LiDAR centering, and alternatives.
 - [Team responsibilities](docs/tasks.md) — suggested owners, deliverables, definitions of done, interface agreements.
@@ -29,15 +31,18 @@ The provided navigator uses `FOLLOW → BACKTRACK → REPLAN → FOLLOW` for blo
 
 ## Quick start
 
-The course provides `vmc2_project`, `project_track`, and `project_track_no_obs`. Extract the world models into `~/.gazebo/models/`, place `vmc2_project` in a ROS 2 workspace, then build and source the workspace:
+The repository already contains the extracted `vmc2_project/`, `project_track/`, and `project_track_no_obs/` directories. **No separate archive download or extraction is required.** In the course's Ubuntu / ROS 2 Humble environment, configure your workspace and Gazebo model directory using [Environment setup](docs/setup.md) (paths depend on your machine).
+
+After following that guide to install the local ROS package and models, set `GAZEBO_MODEL_PATH`, build/source the workspace, and launch:
 
 ```bash
-colcon build --packages-select vmc2_project
-source install/setup.bash
+cd "$ROS_WS"
+colcon build --symlink-install --packages-select vmc2_project
+source "$ROS_WS/install/setup.bash"
 ros2 launch vmc2_project project.launch.py
 ```
 
-Start with the **obstacle-free** world and use the supplied launch setup to select the environment. See [the manual survey](docs/edge-ground-truth.md) for teleoperated exploration or [navigator tests](docs/testing.md) for controlled acceptance tests and the requirement to update `self.start_pos` after teleporting.
+Use the [ground-truth survey](docs/edge-ground-truth.md) for teleoperation or [navigator tests](docs/testing.md) for repeatable acceptance tests. Use the obstacle-free model for initial controller tests; consult the launch file for how that world is selected.
 
 ## Targets
 
