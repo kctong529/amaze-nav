@@ -38,3 +38,36 @@ def transform_points_2d(points, translation, quaternion):
     translated[:, 1] += translation.y
 
     return translated
+
+
+def points_to_edge_frame(points, start, end):
+    """
+    Transform world/odom-frame LiDAR points into an
+    edge-aligned coordinate system.
+
+    s: distance along the edge, starting at start.
+    t: lateral distance from the edge centerline.
+       Positive t is to the left of the edge direction.
+
+    Returns:
+        Nx2 array containing (s, t) coordinates.
+    """
+    points = np.asarray(points, dtype=float)
+    start = np.asarray(start, dtype=float)
+    end = np.asarray(end, dtype=float)
+
+    edge = end - start
+    length = np.linalg.norm(edge)
+
+    if length <= 0:
+        raise ValueError("Edge endpoints must be distinct")
+
+    direction = edge / length
+    normal = np.array([-direction[1], direction[0]])
+
+    relative = points - start
+
+    s = relative @ direction
+    t = relative @ normal
+
+    return np.column_stack((s, t))
