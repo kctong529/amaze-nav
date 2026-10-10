@@ -9,7 +9,7 @@
 | Phase | Primary lead | Supporting work | Shared checkpoint |
 |---|---|---|---|
 | **1. Skeleton and baseline** | Shaan: [controller debug](controller-debug.md) (`straight`, `turn`, then `loop`) | Vo Dinh Nhan: complete `plan_from()`; Ki Chun: LiDAR visualization | Robot follows nodes on obstacle-free track; scans visible |
-| **2. First obstacle** | Ki Chun: passability + side-clearance/confidence estimate | Shaan: gate LiDAR centering + avoidance target; Vo Dinh Nhan: blocked-edge transitions | Robot either passes a simple obstacle safely or replans correctly |
+| **2. First obstacle** | Ki Chun: two-stage passability (cross-sectional bottleneck screening → trajectory clearance), plus side-clearance/confidence estimate | Shaan: gate LiDAR centering + avoidance target; Vo Dinh Nhan: blocked-edge transitions | Robot either passes a simple obstacle safely or replans correctly |
 | **3. Integration** | Vo Dinh Nhan: state-machine tests | Ki Chun + Shaan: perception/controller refinements | No contradictory perception/steering outcomes |
 | **4. Robustness** | **All three** | Repeat trials, tune margins, investigate occlusion and narrow passages | Document success rate, collision failures, and timing |
 | **5. Submission** | **All three** | Review code, record Gazebo runs, prepare gala slides | Reproducible result from the submitted code |

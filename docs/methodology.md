@@ -46,7 +46,7 @@ These are **tuning examples**, not prescribed safe values; verify the actual foo
 |---|---|---|---|
 | Simple front scan threshold | Fast and easy | Cannot tell bypassable from blocked | Safety check only |
 | Single-scan gap detection | Low overhead | Occlusion and unknown space | Start here |
-| Cross-sectional clearance | Exposes bottlenecks | Boundary matching, connectedness difficult | Useful diagnostic |
+| Cross-sectional clearance | Identifies candidate gaps and rejects a **verified unavoidable** bottleneck that is too narrow | Diagonal surfaces, occlusion, and possible bypasses complicate rejection | **Stage 1: early geometric filter** |
 | Per-edge accumulated obstacle points | Retains prior observations, moderate overhead | Unknown space remains implicit | Add if needed |
 | Occupancy grid with local pathfinding | Represents observed free, occupied, unknown | Mapping and planning complexity | Defer |
 
@@ -57,7 +57,13 @@ Express points in an edge-aligned frame with longitudinal `s` and lateral `t`, r
 $$s=(x-x_0)\cos\psi+(y-y_0)\sin\psi$$
 $$t=-(x-x_0)\sin\psi+(y-y_0)\cos\psi$$
 
-At a cross-section `s`, estimate relevant left/right boundaries and gap width `W(s)=t_left(s)-t_right(s)`. The minimum **observed** width along the edge is `min W(s)`. But visible returns may be incomplete, and sufficient width in individual slices does not guarantee a feasible continuous trajectory.
+At each cross-section `s`, identify **relevant free intervals** between observed boundaries, and estimate `W(s) = t_left(s) - t_right(s)` for each candidate passage. Along a single consistently identified passage, the minimum **observed** cross-sectional width is `W_min = min_s W(s)`.
+
+**Stage 1 — reject definitely too-narrow openings:** An opening with a **verified, unavoidable bottleneck** narrower than the robot's required width (`W_required = 0.178 + 2m`) cannot accommodate the chosen footprint and margin. Reject **that opening**; reject the **whole edge** only when observation establishes that every permitted route must cross an inadequate bottleneck. Do not conclude that arbitrary pairs of nearby LiDAR points bound the whole corridor. A narrow slice might be bypassed elsewhere, and incomplete/occluded surfaces should remain **unknown**, not blocked.
+
+**Stage 2 — trajectory feasibility:** For openings not ruled out by Stage 1, generate feasible candidate trajectories (e.g. nominal centerline and small left/right detours). Check the minimum **Euclidean distance** from the proposed robot-center trajectory to the observed obstacle geometry along its length, using `R_effective = 0.178/2 + m` as an illustrative circular-footprint threshold. Check continuity, corridor boundaries, achievable turns, and the **immediate known-free motion**; a wide cross-section is not sufficient evidence that a diagonal or staggered opening can be traversed. The minimum cross-sectional width and the minimum trajectory clearance are different metrics. Sparse LiDAR points and unknown regions require conservative handling.
+
+The final passability decision should combine both stages: **too-narrow unavoidable opening → reject; plausible opening → test a continuous safe trajectory; insufficient evidence → unknown / stop or gather more observations safely**. This is a proposed strategy, not functionality already implemented in the template.
 
 ### Per-edge accumulated point clouds
 
@@ -99,7 +105,7 @@ For standalone controller tests, **disable LiDAR centering (`λ_confidence = 0`)
 
 ## Share perception with target selection
 
-`is_passable()` and `obstacle_avoided_target()` should not make contradictory decisions. A possible shared helper generates candidate paths (centerline, left and right offsets, or curves), estimates clearance to observed obstacles, tests motion feasibility and corridor bounds, and chooses a near-term lookahead point. An isolated clear point is not enough; a safe route must be connected and trackable.
+`is_passable()` and `obstacle_avoided_target()` should not make contradictory decisions. Their shared assessment should first filter **verified too-narrow unavoidable openings** by cross-sectional width, then evaluate trajectories through remaining candidate openings (centerline, lateral offsets, or curves) using Euclidean footprint clearance, continuity, and corridor bounds; finally choose a near-term obstacle-aware lookahead point. An isolated clear point is not enough; a safe route must be connected and trackable.
 
 The boolean `is_passable()` cannot directly encode **clear / unknown / blocked**. Keep uncertainty as internal state or diagnostics. Returning true in an unknown situation must not cause motion into unseen or insufficiently cleared space: stop, rotate, or approach only when the immediate motion is known safe. Confirm blocked-edge decisions with adequate evidence rather than a single transient scan.
 
@@ -111,7 +117,7 @@ Use the [manual edge survey](edge-ground-truth.md) to establish evidence-based `
 
 1. Establish A* path assembly and pure-pursuit tracking in the **obstacle-free** world.
 2. Visualize single-scan LiDAR points and check immediate clearance.
-3. Test obstacle-aware targets on the selected edges and ensure stops remain safe.
+3. For selected edges, run the **two-stage** check: locate/validate cross-sectional bottlenecks, then evaluate continuous candidate trajectories and obstacle-aware targets; ensure stopping remains safe.
 4. Add a bounded per-edge point buffer only if single-scan occlusion causes real problems.
 5. Add occupancy-grid mapping only if unknown-space representation is proven necessary.
 

@@ -28,7 +28,9 @@ The division below is based on **interfaces and dependencies**, rather than assi
 - [ ] Convert valid `/scan` ranges and angles to Cartesian obstacle points, with correct robot/sensor frame handling.
 - [ ] Visualize obstacle points relative to the robot and intended edge; annotate useful clearances for debugging.
 - [ ] Account for the TurtleBot's stated **0.178 m width** and a *tunable*, experimentally justified safety margin.
-- [ ] Implement `is_passable(seg_dir_yaw)` without treating every obstacle directly ahead as an impassable edge.
+- [ ] **Stage 1:** estimate candidate cross-sectional opening widths; flag openings narrower than the robot width plus tuned margins, and only reject the *edge* when the bottleneck is confirmed unavoidable.
+- [ ] **Stage 2:** validate a continuous candidate trajectory through a remaining opening using Euclidean obstacle clearance, robot footprint, corridor bounds, and visibility/safety checks.
+- [ ] Implement `is_passable(seg_dir_yaw)` using both stages; distinguish a bypassable obstacle or an unknown region from confirmed edge blockage.
 - [ ] Provide obstacle/clearance information that the avoidance controller can reuse.
 - [ ] Estimate segment-aligned left/right clearance `d_L`, `d_R`, plus validity/confidence; suppress centering when a side wall is not identified reliably.
 - [ ] Document ambiguous/unknown observations and define when there is sufficient evidence to mark an edge blocked.
@@ -41,7 +43,7 @@ The division below is based on **interfaces and dependencies**, rather than assi
 - [ ] An empty corridor stays passable; a bypassable obstacle is not prematurely classified as blocked; a genuinely blocked passage is rejected with repeatable evidence.
 - [ ] Obstacle points or diagnostics follow the robot’s pose and remain in the correct coordinate frame when it rotates.
 - [ ] The passability/clearance assessment can be explained from recorded scan data; perception publishes no velocity commands itself.
-- [ ] Record clearance plots, the selected candidate opening/trajectory, and the classification for **all four edge tests in [the four edge tests](testing.md#edge-specific-perception-and-clearance-tests)**, including the final challenge edge; compare results across repeated observations and at least three trials per edge.
+- [ ] Record `W_min` for candidate openings, whether any narrow slice is **unavoidable**, minimum clearance along a selected trajectory, and the classification for **all four edge tests in [the four edge tests](testing.md#edge-specific-perception-and-clearance-tests)**, including the final challenge edge; compare results across repeated observations and at least three trials per edge.
 
 **Quick test:** Use the four edge-specific perception cases in **[the four edge tests](testing.md#edge-specific-perception-and-clearance-tests)**, starting with `(3.560, -5.696) → (4.984, -5.696)` and progressing to the designated challenge `(6.408, -4.272) → (6.408, -5.696)`. Set the teleport pose and `self.start_pos` consistently; use a test-only edge selection so A* does not choose an unrelated segment.
 

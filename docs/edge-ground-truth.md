@@ -10,7 +10,7 @@ In addition to a `P/B/U` judgment, optionally note whether visible side boundari
 
 For this survey, an edge is **passable** when the TurtleBot can traverse between its adjacent node centers inside the intended corridor, with safe clearance and no contact, under careful manual control. An edge is **blocked** only if direct inspection and repeated attempts give convincing evidence that no collision-free route exists for the robot footprint. A failed drive, poor steering, or missing LiDAR information **does not prove blockage**. Mark such cases **uncertain**, and leave them out of binary evaluation until investigated.
 
-Record observations separately for **A → B** and **B → A** where feasible. The underlying obstacle geometry should be the same, but visibility, access, turning space, and driving outcomes can differ by direction. Do not label a geometrically passable edge blocked solely because the current controller cannot traverse it.
+Record cross-sectional opening-width evidence **separately** from minimum clearance along a successfully traversed (or attempted) path; a narrow opening only proves an edge blocked if that opening is unavoidable and there is no alternative route inside the allowed corridor. Record observations separately for **A → B** and **B → A** where feasible. The underlying obstacle geometry should be the same, but visibility, access, turning space, and driving outcomes can differ by direction. Do not label a geometrically passable edge blocked solely because the current controller cannot traverse it.
 
 Labels: `P` = confirmed traversable; `B` = convincingly physically blocked; `U` = uncertain/untested. Include confidence (`high`/`medium`/`low`) and evidence. A geometric opening estimate alone is not confirmation.
 

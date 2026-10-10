@@ -28,7 +28,7 @@ The course supplies a partially implemented `navigator.py`. **A* graph search al
 | `is_passable(seg_dir_yaw)` | Determine whether current edge should remain in use | **TODO** |
 | `obstacle_avoided_target(robot_pos, seg_dir_yaw)` | Choose an obstacle-aware target in world coordinates | **TODO** |
 
-`seg_dir_yaw` is the **world/odometry-frame segment heading**, not a LiDAR-relative angle. `is_passable()` is called repeatedly while in `FOLLOW`, so it can reconsider its decision as new readings arrive. Avoid conflating an obstacle on the centerline with a blocked edge. Perception and target selection should ideally share a geometric representation; see [methodology](methodology.md).
+`seg_dir_yaw` is the **world/odometry-frame segment heading**, not a LiDAR-relative angle. `is_passable()` is called repeatedly while in `FOLLOW`, so it can reconsider its decision as new readings arrive. Use the proposed **two-stage** logic: reject verified unavoidable cross-sectional bottlenecks below footprint width, then test continuous trajectory clearance through remaining openings. Avoid conflating an obstacle on the centerline with a blocked edge. Perception and target selection should ideally share a geometric representation; see [methodology](methodology.md).
 
 ## Control and utilities
 

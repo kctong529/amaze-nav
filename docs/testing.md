@@ -47,7 +47,7 @@ Rather than relying only on checkpoint 1, use the following **four directed grap
 | 3 | `(4.984, -2.848)` → `(6.408, -2.848)` | `(4.984, -2.848)` | `0°` (+X) | Third obstacle/gap geometry case |
 | 4 | **`(6.408, -4.272)` → `(6.408, -5.696)`** | `(6.408, -4.272)` | **`-90°` (−Y)** | **Final challenge: passage-clearance and steering validation** |
 
-All four are adjacent nodes in the template's grid; their nominal length is **1.424 m**. For each test, record the **minimum estimated clearance along the proposed path**, not merely the gap at the nearest visible entrance. Compare the clearance with the configured robot footprint plus safety margin; verify that the selected opening is connected to a collision-free local maneuver. Distinguish **unknown/unseen** space from measured clearance.
+All four are adjacent nodes in the template's grid; their nominal length is **1.424 m**. For each test, record **both stages separately**: (1) cross-sectional minimum observed gap width `W_min`, the opening/boundaries it refers to, and whether its bottleneck is demonstrably **unavoidable**; (2) minimum **Euclidean clearance along the proposed continuous trajectory**, compared with the effective robot radius plus safety margin, plus corridor/turning feasibility. A verified too-narrow *unavoidable* opening is rejectable; a wide slice does **not** prove passability. Distinguish **unknown/unseen** space from measured clearance.
 
 **Copy-pasteable teleport examples (stop the navigator first; keep Gazebo running):**
 
@@ -97,7 +97,7 @@ Set `self.start_pos = (6.408, -4.272)`. This orientation faces `−Y` (`yaw = �
 
 - [ ] RViz `/scan` geometry matches Gazebo at the initial pose; check the heading especially for Test 4.
 - [ ] Visualize LiDAR point cloud, selected gap/candidate trajectory, and robot clearance footprint in a consistent frame.
-- [ ] Report observed **bottleneck clearance** and whether its location changes as the robot gathers new scans.
+- [ ] Report cross-sectional `W_min` and whether a narrow bottleneck is unavoidable, **plus** minimum trajectory clearance; check whether their locations change as new scans arrive.
 - [ ] Verify that the chosen maneuver stays free of observed obstacles; do not call unseen space clear.
 - [ ] Log passability status, minimum clearance estimate, and reason for the decision at multiple positions along the edge.
 - [ ] Repeat at least three times, noting correct traversals, false-blocked outcomes, and collisions/unsafe approaches.
