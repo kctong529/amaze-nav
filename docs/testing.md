@@ -47,7 +47,7 @@ Rather than relying only on checkpoint 1, use the following **four directed grap
 | 3 | `(4.984, -2.848)` → `(6.408, -2.848)` | `(4.984, -2.848)` | `0°` (+X) | Third obstacle/gap geometry case |
 | 4 | **`(6.408, -4.272)` → `(6.408, -5.696)`** | `(6.408, -4.272)` | **`-90°` (−Y)** | **Final challenge: passage-clearance and steering validation** |
 
-All four are adjacent nodes in the template's grid; their nominal length is **1.424 m**. For each test, record **both stages separately**: (1) cross-sectional minimum observed gap width `W_min`, the opening/boundaries it refers to, and whether its bottleneck is demonstrably **unavoidable**; (2) minimum **Euclidean clearance along the proposed continuous trajectory**, compared with the effective robot radius plus safety margin, plus corridor/turning feasibility. A verified too-narrow *unavoidable* opening is rejectable; a wide slice does **not** prove passability. Distinguish **unknown/unseen** space from measured clearance.
+All four are adjacent nodes in the template's grid; their nominal length is **1.424 m**. For each test, record **both stages separately**: (1) cross-sectional minimum observed gap width `W_min`, the opening/boundaries it refers to, and whether its bottleneck is demonstrably **unavoidable**; (2) minimum **Euclidean clearance along the predicted short pure-pursuit motion toward the shifted target**, compared with the effective robot radius plus safety margin, plus corridor/turning and stopping feasibility. Re-evaluate after each scan; a single locally safe motion does not prove the whole edge passable. A verified too-narrow *unavoidable* opening is rejectable; a wide slice does **not** prove passability. Distinguish **unknown/unseen** space from measured clearance.
 
 **Copy-pasteable teleport examples (stop the navigator first; keep Gazebo running):**
 
@@ -96,13 +96,13 @@ Set `self.start_pos = (6.408, -4.272)`. This orientation faces `−Y` (`yaw = �
 **Navigator perception acceptance checks for each priority edge:**
 
 - [ ] RViz `/scan` geometry matches Gazebo at the initial pose; check the heading especially for Test 4.
-- [ ] Visualize LiDAR point cloud, selected gap/candidate trajectory, and robot clearance footprint in a consistent frame.
-- [ ] Report cross-sectional `W_min` and whether a narrow bottleneck is unavoidable, **plus** minimum trajectory clearance; check whether their locations change as new scans arrive.
+- [ ] Visualize LiDAR point cloud, selected opening, shifted lookahead target, and short predicted motion, and robot clearance footprint in a consistent frame.
+- [ ] Report cross-sectional `W_min` and whether a narrow bottleneck is unavoidable, **plus** minimum short-horizon motion clearance; check whether their locations change as new scans arrive.
 - [ ] Verify that the chosen maneuver stays free of observed obstacles; do not call unseen space clear.
 - [ ] Log passability status, minimum clearance estimate, and reason for the decision at multiple positions along the edge.
 - [ ] Repeat at least three times, noting correct traversals, false-blocked outcomes, and collisions/unsafe approaches.
 
-For RViz, the most helpful additional debug objects would be an **active-edge line**, **candidate trajectory**, **closest-obstacle/bottleneck marker**, and **effective robot-radius circle**. These are proposed marker publishers, not topics already present in the template; the existing `/scan` and `/odom` can be inspected without adding them.
+For RViz, the most helpful additional debug objects would be an **active-edge line**, **predicted short motion**, **closest-obstacle/bottleneck marker**, and **effective robot-radius circle**. These are proposed marker publishers, not topics already present in the template; the existing `/scan` and `/odom` can be inspected without adding them.
 
 **Suggested navigator smoke-test sequence**
 

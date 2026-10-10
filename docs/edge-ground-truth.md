@@ -90,7 +90,7 @@ python3 teleport_edge.py 3 4 4 4
 # Copy and run the printed ros2 service call.
 ```
 
-**Note:** For manual driving, you do **not** need to change `self.start_pos`, because you are not running the navigator. If later running the navigator from a teleported start, the assignment requires setting `self.start_pos` to the same position. Teleporting to one node does not force A* to choose a particular next edge.
+**Note:** For manual driving, you do **not** need to change `self.start_pos`, because you are not running the navigator. If later running the navigator from a teleported start, the assignment requires setting `self.start_pos` to the same position. Teleporting to one node does not force A\* to choose a particular next edge.
 
 ## 3. Capture evidence and observations
 
@@ -210,3 +210,7 @@ Before using the resulting labels to evaluate `is_passable()`:
 - Remember the assignment prohibits hard-coding or prerecorded maze-specific knowledge **in the submitted navigator**. This survey is for testing, debugging, and algorithm validation, not to build a fixed blocked-edge lookup table into `navigator.py`.
 
 **Completion criterion:** All 40 graph edges have been explicitly reviewed and assigned `P`, `B`, or `U`, with evidence notes. The desired final dataset has confident P/B labels wherever safely determinable; any remaining uncertainty must be visible rather than silently resolved.
+
+## Interpreting Stage 2 observations
+
+Keep ground-truth `P` / `B` / `U` labels based on observed physical traversal. For future detector comparison, separately record the **minimum short-horizon clearance predicted for an obstacle-shifted lookahead**. An apparently safe short arc is not proof that the whole edge can be traversed; failing one local target also does not establish that the edge is blocked. The survey remains independent of the algorithm and must not become a prerecorded obstacle map.

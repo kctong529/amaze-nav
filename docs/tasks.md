@@ -29,7 +29,7 @@ The division below is based on **interfaces and dependencies**, rather than assi
 - [ ] Visualize obstacle points relative to the robot and intended edge; annotate useful clearances for debugging.
 - [ ] Account for the TurtleBot's stated **0.178 m width** and a *tunable*, experimentally justified safety margin.
 - [ ] **Stage 1:** estimate candidate cross-sectional opening widths; flag openings narrower than the robot width plus tuned margins, and only reject the *edge* when the bottleneck is confirmed unavoidable.
-- [ ] **Stage 2:** validate a continuous candidate trajectory through a remaining opening using Euclidean obstacle clearance, robot footprint, corridor bounds, and visibility/safety checks.
+- [ ] **Stage 2:** identify a feasible opening and help assess the **short motion induced by a shifted pure-pursuit target**, using Euclidean clearance, swept robot footprint, corridor bounds, stopping distance, and observed-versus-unknown space. A full local trajectory is not required.
 - [ ] Implement `is_passable(seg_dir_yaw)` using both stages; distinguish a bypassable obstacle or an unknown region from confirmed edge blockage.
 - [ ] Provide obstacle/clearance information that the avoidance controller can reuse.
 - [ ] Estimate segment-aligned left/right clearance `d_L`, `d_R`, plus validity/confidence; suppress centering when a side wall is not identified reliably.
@@ -43,7 +43,7 @@ The division below is based on **interfaces and dependencies**, rather than assi
 - [ ] An empty corridor stays passable; a bypassable obstacle is not prematurely classified as blocked; a genuinely blocked passage is rejected with repeatable evidence.
 - [ ] Obstacle points or diagnostics follow the robot’s pose and remain in the correct coordinate frame when it rotates.
 - [ ] The passability/clearance assessment can be explained from recorded scan data; perception publishes no velocity commands itself.
-- [ ] Record `W_min` for candidate openings, whether any narrow slice is **unavoidable**, minimum clearance along a selected trajectory, and the classification for **all four edge tests in [the four edge tests](testing.md#edge-specific-perception-and-clearance-tests)**, including the final challenge edge; compare results across repeated observations and at least three trials per edge.
+- [ ] Record `W_min` for candidate openings, whether any narrow slice is **unavoidable**, minimum clearance along the predicted short motion, and the classification for **all four edge tests in [the four edge tests](testing.md#edge-specific-perception-and-clearance-tests)**, including the final challenge edge; compare results across repeated observations and at least three trials per edge.
 
 **Quick test:** Use the four edge-specific perception cases in **[the four edge tests](testing.md#edge-specific-perception-and-clearance-tests)**, starting with `(3.560, -5.696) → (4.984, -5.696)` and progressing to the designated challenge `(6.408, -4.272) → (6.408, -5.696)`. Set the teleport pose and `self.start_pos` consistently; use a test-only edge selection so A* does not choose an unrelated segment.
 
@@ -53,12 +53,12 @@ The division below is based on **interfaces and dependencies**, rather than assi
 
 **Deliverables**
 - [ ] **Select an obstacle-aware lookahead target and command `/cmd_vel`** (core responsibility in the supplied template).
-- [ ] Implement `obstacle_avoided_target(robot_pos, seg_dir_yaw)` using the agreed perception output; keep selected targets within the intended corridor.
+- [ ] Implement `obstacle_avoided_target(robot_pos, seg_dir_yaw)` by adjusting the normal pure-pursuit lookahead point toward a suitable detected opening; keep target and predicted short motion inside safe corridor space.
 - [ ] Implement `turtlebot_control(robot_pos, robot_h, target, dt, Ld)` to return `(v_cmd, w_cmd)` and drive the target using pure pursuit as the baseline.
 - [ ] Set `lookahead_dist`, `v_max`, `w_max`, and optional PID parameters.
 - [ ] Establish reliable heading alignment, straight driving, turns, and waypoint arrival on the **obstacle-free** track using the [`straight`, `turn`, and `loop` controller debug routes](controller-debug.md).
 - [ ] **Optional enhancement:** Add lateral centering only when perception supplies valid side measurements, using a bounded angular PID correction; disable/reset it near turns, at junctions, or when measurements are unreliable.
-- [ ] Ensure targets remain in the intended corridor and immediate motion has adequate clearance.
+- [ ] Check the **predicted pure-pursuit short motion**, not just the target point or the straight line to it; ensure adequate swept-footprint clearance and safe stopping.
 - [ ] Add safe speed reduction/stopping when nearby space is uncertain, including during backtracking.
 - [ ] Record repeatability and tuning results for controller parameters.
 
@@ -99,7 +99,7 @@ Before implementing the workstreams independently, agree on these contracts in a
 
 1. **Edge identity:** How do we store the currently attempted graph edge? When exactly do we reset temporary LiDAR observations?
 2. **Coordinate frames:** LiDAR angles are sensor/robot-relative; `seg_dir_yaw` and waypoints are in the world/odometry frame. How will helpers transform between them?
-3. **Shared perception result:** Agree on `d_L`, `d_R`, validity/confidence, active edge frame, and any candidate targets/clearances; avoid inconsistent geometric checks in separate functions.
+3. **Shared perception result:** Agree on `d_L`, `d_R`, validity/confidence, active edge frame, and candidate opening/shifted target, and short-motion clearance; avoid inconsistent geometric checks in separate functions.
 4. **Blending policy:** Pure pursuit is baseline; choose confidence gating, centering gain/sign, turn suppression, PID reset, and safety precedence before integration.
 4. **Uncertainty and safety:** What does the robot do when an edge is neither known clear nor definitively blocked? `is_passable()` is boolean, so **unknown must not silently mean safe forward movement**.
 5. **Stopping and clearance:** Choose initial conservative values for robot-radius approximation, safety margin, and slow/stop distances, then tune experimentally.

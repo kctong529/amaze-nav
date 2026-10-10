@@ -9,7 +9,7 @@
 | Phase | Primary lead | Supporting work | Shared checkpoint |
 |---|---|---|---|
 | **1. Skeleton and baseline** | Shaan: [controller debug](controller-debug.md) (`straight`, `turn`, then `loop`) | Vo Dinh Nhan: complete `plan_from()`; Ki Chun: LiDAR visualization | Robot follows nodes on obstacle-free track; scans visible |
-| **2. First obstacle** | Ki Chun: two-stage passability (cross-sectional bottleneck screening → trajectory clearance), plus side-clearance/confidence estimate | Shaan: gate LiDAR centering + avoidance target; Vo Dinh Nhan: blocked-edge transitions | Robot either passes a simple obstacle safely or replans correctly |
+| **2. First obstacle** | Ki Chun: two-stage passability (cross-sectional bottleneck screening → short-horizon motion clearance), plus side-clearance/confidence estimate | Shaan: gate LiDAR centering + avoidance target; Vo Dinh Nhan: blocked-edge transitions | Robot either passes a simple obstacle safely or replans correctly |
 | **3. Integration** | Vo Dinh Nhan: state-machine tests | Ki Chun + Shaan: perception/controller refinements | No contradictory perception/steering outcomes |
 | **4. Robustness** | **All three** | Repeat trials, tune margins, investigate occlusion and narrow passages | Document success rate, collision failures, and timing |
 | **5. Submission** | **All three** | Review code, record Gazebo runs, prepare gala slides | Reproducible result from the submitted code |
@@ -42,7 +42,7 @@ Parallel work is useful, but **integrate the first working baseline on Day 1**. 
 | Risk | First owner | Mitigation |
 |---|---|---|
 | LiDAR detects a nearby obstacle but incorrectly marks an otherwise passable edge blocked | Perception | Differentiate obstacle proximity from corridor reachability; test edge cases |
-| Steering heads toward a gap that lacks clearance | Perception + control | Shared clearance geometry and immediate collision checking |
+| Steering heads toward a gap that lacks clearance | Perception + control | Shared gap/target geometry, predicted pure-pursuit motion checks, and safe stopping |
 | Robot turns incorrectly at grid nodes or oscillates near a waypoint | Control | Test on obstacle-free track first and tune tolerances |
 | Backtracking itself causes a collision | Control + navigation | Apply clearance-aware control during recovery, not just `FOLLOW` |
 | Incorrect edge removal or path bookkeeping | Navigation | Small deterministic graph/state tests and visual inspection |
@@ -62,3 +62,7 @@ Parallel work is useful, but **integrate the first working baseline on Day 1**. 
 **Overall principle:** divide ownership, not responsibility. Perception, avoidance, and the state machine are tightly coupled, so the final system must be designed and tested together.
 
 For direct testing, see [teleport commands](testing.md); for markers and observations, see [RViz guide](debugging.md).
+
+## Local avoidance scope decision
+
+Implement **shifted obstacle-aware lookahead + predicted short-motion clearance** first. Ki Chun screens gaps and supplies geometry; Shaan chooses and tracks the shifted target; both validate the near-term swept footprint. Repeat as scans update. A complete precomputed local curve to the next graph node is **not** required in the initial two-day scope; revisit it only if focused tests show that the simple strategy cannot pass a specific opening.

@@ -19,7 +19,7 @@ The provided navigator uses `FOLLOW → BACKTRACK → REPLAN → FOLLOW` for blo
 ## Documentation
 
 - [Provided framework & function guide](docs/framework.md) — what's already implemented versus TODOs, modes, ROS interfaces.
-- [Perception & navigation methodology](docs/methodology.md) — two-stage passability (cross-sectional gap screening + trajectory clearance), pure pursuit, optional LiDAR centering, and alternatives.
+- [Perception & navigation methodology](docs/methodology.md) — two-stage passability (cross-sectional gap screening + short-horizon motion clearance), pure pursuit, optional LiDAR centering, and alternatives.
 - [Team responsibilities](docs/tasks.md) — suggested owners, deliverables, definitions of done, interface agreements.
 - [Two-day implementation plan](docs/development.md) — integration sequence, priorities, risks, lightweight collaboration.
 - [Edge passability ground-truth survey](docs/edge-ground-truth.md) — manually investigate all 40 edges and record evidence before evaluating perception.

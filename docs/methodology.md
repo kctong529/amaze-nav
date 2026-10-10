@@ -14,7 +14,7 @@ The nearest return directly ahead can indicate an obstacle but cannot distinguis
 
 $$d=\sqrt{r_1^2+r_2^2-2r_1r_2\cos(\Delta\theta)}$$
 
-But that measures the distance between **two returns**, not automatically the minimum navigable gap. What matters is whether a continuous collision-free trajectory exists through the corridor.
+But that measures the distance between **two returns**, not automatically the minimum navigable gap. What ultimately matters is a collision-free traversal; initially we validate safe short motions toward the next node, not a complete local curve in advance.
 
 ## LiDAR geometry and frame conversion
 
@@ -61,7 +61,9 @@ At each cross-section `s`, identify **relevant free intervals** between observed
 
 **Stage 1 — reject definitely too-narrow openings:** An opening with a **verified, unavoidable bottleneck** narrower than the robot's required width (`W_required = 0.178 + 2m`) cannot accommodate the chosen footprint and margin. Reject **that opening**; reject the **whole edge** only when observation establishes that every permitted route must cross an inadequate bottleneck. Do not conclude that arbitrary pairs of nearby LiDAR points bound the whole corridor. A narrow slice might be bypassed elsewhere, and incomplete/occluded surfaces should remain **unknown**, not blocked.
 
-**Stage 2 — trajectory feasibility:** For openings not ruled out by Stage 1, generate feasible candidate trajectories (e.g. nominal centerline and small left/right detours). Check the minimum **Euclidean distance** from the proposed robot-center trajectory to the observed obstacle geometry along its length, using `R_effective = 0.178/2 + m` as an illustrative circular-footprint threshold. Check continuity, corridor boundaries, achievable turns, and the **immediate known-free motion**; a wide cross-section is not sufficient evidence that a diagonal or staggered opening can be traversed. The minimum cross-sectional width and the minimum trajectory clearance are different metrics. Sparse LiDAR points and unknown regions require conservative handling.
+**Stage 2 — short-horizon motion feasibility (chosen baseline):** For openings that survive Stage 1, **do not require a complete obstacle-aware curve to the next graph node**. First choose a feasible local opening (often a gap midpoint), shift the *existing* pure-pursuit lookahead target toward it, and predict the **short motion that `turtlebot_control()` would actually command**. Evaluate the swept robot footprint along this predicted arc or straight segment, including minimum Euclidean distance to observed obstacle surfaces, corridor bounds, motion feasibility, and ability to stop inside known-safe space. Sample densely or use segment/arc clearance calculations. A straight line to a lookahead point is **not** necessarily the pure-pursuit arc. Reject or modify an unsafe target, and repeat after the next scan.
+
+A locally clear prediction means **safe to take that limited motion**, not that the whole 1.424 m edge has been proven passable. Keep **CLEAR / UNKNOWN / BLOCKED** assessments separate from immediate motion authorization. Lack of LiDAR returns does not certify unobserved space; if no safe short motion or observation maneuver is established, stop. If evidence demonstrates that every possible opening is obstructed, mark the edge blocked and replan. Otherwise remain uncertain. **Full local-trajectory planning** is an optional future improvement if simple target shifts repeatedly fail on diagonal or staggered obstacles.
 
 The final passability decision should combine both stages: **too-narrow unavoidable opening → reject; plausible opening → test a continuous safe trajectory; insufficient evidence → unknown / stop or gather more observations safely**. This is a proposed strategy, not functionality already implemented in the template.
 
@@ -93,7 +95,7 @@ $$\omega_{cmd}=\mathrm{clip}(\omega_{PP}+\lambda_{confidence}\omega_c,-\omega_{m
 
 Start with `K_i = K_d = 0`; tune only if repeated runs justify additional terms. Unlike a weighted average of two angular velocities, the additive correction leaves normal pure-pursuit steering intact when the centering correction is zero. `λ_confidence` should be **zero** when side-wall geometry is missing, ambiguous, asymmetric due to a junction, or unreliable, and reduced near graph-node turns. Reset or freeze PID integral/derivative state when the correction is disabled; clamp velocity and apply independent immediate-collision checks.
 
-**Obstacles directly on the intended trajectory are a different situation:** use gap/trajectory detection to select a reachable, collision-checked temporary target in `obstacle_avoided_target()`. A midpoint between two returns is only a candidate, not proof of a feasible trajectory. `is_passable()` must distinguish genuinely blocked corridors from temporarily unknown ones. Do not let blending override an emergency stop.
+**Obstacles directly on the intended motion are a different situation:** choose a candidate opening, shift the normal pure-pursuit lookahead target toward it in `obstacle_avoided_target()`, and validate the **predicted short commanded motion** before moving. A midpoint between two returns is a candidate only, not a guarantee of clearance. `is_passable()` must distinguish genuinely blocked corridors from temporarily unknown ones. Do not let blending override an emergency stop.
 
 ### Interface for independent work
 
@@ -105,7 +107,7 @@ For standalone controller tests, **disable LiDAR centering (`λ_confidence = 0`)
 
 ## Share perception with target selection
 
-`is_passable()` and `obstacle_avoided_target()` should not make contradictory decisions. Their shared assessment should first filter **verified too-narrow unavoidable openings** by cross-sectional width, then evaluate trajectories through remaining candidate openings (centerline, lateral offsets, or curves) using Euclidean footprint clearance, continuity, and corridor bounds; finally choose a near-term obstacle-aware lookahead point. An isolated clear point is not enough; a safe route must be connected and trackable.
+`is_passable()` and `obstacle_avoided_target()` should share the same observed geometry, gap candidates, and immediate safety assessment. **Stage 1** screens demonstrably too-narrow unavoidable bottlenecks. **Stage 2** proposes an obstacle-shifted pure-pursuit lookahead target, predicts the ensuing *short* controller motion, and checks its swept-footprint clearance and stopping feasibility. The selected target is passed to `turtlebot_control()`; the existing `publish_cmd()` sends `/cmd_vel`. A validated local motion is not evidence that the complete graph edge is passable. Do not add a separate velocity publisher to perception.
 
 The boolean `is_passable()` cannot directly encode **clear / unknown / blocked**. Keep uncertainty as internal state or diagnostics. Returning true in an unknown situation must not cause motion into unseen or insufficiently cleared space: stop, rotate, or approach only when the immediate motion is known safe. Confirm blocked-edge decisions with adequate evidence rather than a single transient scan.
 
@@ -117,7 +119,7 @@ Use the [manual edge survey](edge-ground-truth.md) to establish evidence-based `
 
 1. Establish A* path assembly and pure-pursuit tracking in the **obstacle-free** world.
 2. Visualize single-scan LiDAR points and check immediate clearance.
-3. For selected edges, run the **two-stage** check: locate/validate cross-sectional bottlenecks, then evaluate continuous candidate trajectories and obstacle-aware targets; ensure stopping remains safe.
+3. For selected edges, run the **two-stage** check: locate/validate cross-sectional bottlenecks, then evaluate obstacle-shifted lookahead targets and their predicted short motions; ensure stopping remains safe.
 4. Add a bounded per-edge point buffer only if single-scan occlusion causes real problems.
 5. Add occupancy-grid mapping only if unknown-space representation is proven necessary.
 
