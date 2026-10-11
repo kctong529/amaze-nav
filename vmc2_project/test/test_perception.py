@@ -40,7 +40,9 @@ class PerceptionTests(unittest.TestCase):
         self.assertAlmostEqual(slice_055.gaps[0].midpoint, -.15)
         self.assertEqual(assess_passability(observation, A).status, Passability.UNKNOWN)
         target = choose_avoidance_target(observation, A, B)
-        self.assertIsNone(target.target)
+        self.assertIsNotNone(target.target)
+        self.assertEqual(len(target.target), 2)
+        self.assertTrue(np.isfinite(target.target).all())
         self.assertFalse(target.clearance_verified)
 
     def test_wrong_input_rejected(self):

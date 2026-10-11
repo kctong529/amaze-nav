@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 
 import cv2
@@ -11,7 +10,7 @@ from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from perception import analyze_edge
+from perception import analyze_edge, detect_bottlenecks, assess_passability, plan_candidate_trajectory
 
 from perception_geometry import (
     transform_points_2d,
@@ -370,6 +369,7 @@ def draw_edge_frame(
     robot_st=None,
     obstacle_intervals=None,
     candidate_gaps=None,
+    trajectory_st=None,
     size=700,
     scale=300,
 ):
@@ -475,6 +475,11 @@ def draw_edge_frame(
         REQUIRED_WIDTH,
     )
 
+    # Overlay last requested candidate trajectory (green if feasible).
+    if trajectory_st is not None and len(trajectory_st) > 1:
+        coords = np.asarray([to_pixel(s,t) for s,t in trajectory_st], dtype=np.int32)
+        cv2.polylines(image, [coords], False, (0, 155, 0), 2)
+
     # Draw the robot in edge coordinates.
     if robot_st is not None:
         px, py = to_pixel(*robot_st)
@@ -513,7 +518,7 @@ def draw_edge_frame(
         image,
         "Use [ and ] to move the slice\n"
         "Use , and . to change the edge\n"
-        "Use p to log the latest slice profile",
+        "Use p to log profile; b to assess edge",
         (15, size - 60),
     )
 
@@ -551,6 +556,8 @@ class LidarExplorer(Node):
         self.latest_world_points = None
         self.latest_edge_observation = None
         self.latest_slice_results = []
+        self.latest_trajectory = None
+        self.latest_sensor_xy = None
 
         # The latest scan awaiting its timestamp-matched TF.
         self.pending_scan = None
@@ -695,6 +702,20 @@ class LidarExplorer(Node):
             lateral_range=1.0,
         )
         self.latest_edge_observation = observation
+
+        bottlenecks = detect_bottlenecks(
+            self.latest_edge_observation,
+        )
+
+        if bottlenecks:
+            for bottleneck in bottlenecks:
+                self.get_logger().warn(
+                    f"Possible bottleneck at s={bottleneck.s:.2f} m: "
+                    f"widest={bottleneck.widest_gap:.3f} m, "
+                    f"required={bottleneck.required_width:.3f} m",
+                    throttle_duration_sec=2.0,
+                )
+
         filtered_points = observation.obstacle_points_st
 
         # Keep the legacy format for the existing 'p' key logger.
@@ -737,6 +758,8 @@ class LidarExplorer(Node):
             transform.transform.translation.y,
         )
 
+        self.latest_sensor_xy = sensor_xy
+
         sensor_st = points_to_edge_frame(
             np.asarray([sensor_xy]),
             start,
@@ -751,6 +774,7 @@ class LidarExplorer(Node):
             robot_st=sensor_st,
             obstacle_intervals=obstacle_intervals,
             candidate_gaps=candidate_gaps,
+            trajectory_st=(self.latest_trajectory.path_st if self.latest_trajectory is not None and self.latest_trajectory.feasible else None),
         )
 
         # Draw the odometry-frame visualization.
@@ -825,6 +849,7 @@ class LidarExplorer(Node):
             self.slice_s = 0.712
             self.latest_edge_observation = None
             self.latest_slice_results = []
+            self.latest_trajectory = None
             self.log_selected_edge()
 
         elif key == ord(","):
@@ -835,10 +860,43 @@ class LidarExplorer(Node):
             self.slice_s = 0.712
             self.latest_edge_observation = None
             self.latest_slice_results = []
+            self.latest_trajectory = None
             self.log_selected_edge()
 
         elif key == ord("p"):
             self.log_slice_profile()
+
+        elif key == ord("t"):
+            if self.latest_edge_observation is None or self.latest_sensor_xy is None:
+                self.get_logger().info("No transformed scan available yet")
+            else:
+                self.latest_trajectory = plan_candidate_trajectory(
+                    self.latest_edge_observation,
+                    self.latest_sensor_xy,
+                )
+                trial = self.latest_trajectory
+                self.get_logger().info(
+                    f"Trajectory: feasible={trial.feasible}; {trial.reason}; "
+                    f"clearance={trial.min_observed_clearance}; "
+                    f"curvature={trial.max_curvature}; candidate={trial.candidate}"
+                )
+
+        elif key == ord("b"):
+            if self.latest_edge_observation is None:
+                self.get_logger().info("No edge observation available yet")
+            else:
+                # No trusted physical corridor limits have been supplied.
+                # This must NOT be interpreted as a confirmed blockage.
+                start, end = self.selected_edge
+                result = assess_passability(
+                    self.latest_edge_observation,
+                    robot_position=start,
+                )
+                self.get_logger().info(
+                    f"Edge {start} -> {end}: {result.status.name} - "
+                    f"{result.reason}; narrowest flagged gap="
+                    f"{result.minimum_observed_width}"
+                )
 
 
 def main():
