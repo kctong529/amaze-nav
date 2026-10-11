@@ -1,4 +1,4 @@
-# Perception Module v1.0 — API and navigator integration
+# Perception Module v1.1 — API and navigator integration
 
 **Status:** Tested in a standalone LiDAR/OpenCV explorer; **not integrated into `navigator.py`**. The source is `vmc2_project/src/perception.py`, which is independent of ROS. `tools/lidar_explorer.py` adapts ROS TF/LaserScan observations into the API. This document describes implemented behavior, not guarantees of physical safety.
 
@@ -46,6 +46,14 @@ else:
 
 `MotionPlan` contains `segments_st` (one or two **separate** translation paths), `rotation_st` (optional), `departure_yaw` (optional, fixed-frame radians), `requires_rescan`, optional observed `clearance`, and optional `candidate`. If rotation is proposed, the prospective continuation is **hypothetical**, not permission to drive. Do not concatenate separate segments and send them to pure pursuit as a single path.
 
+## Detected-opening passability policy
+
+`assess_passability(observation, robot_position, *, robot_radius=0.089, safety_margin=0.03) -> PassabilityResult` examines cross-sections not entirely behind the robot. At each eligible slice (at least two retained obstacle clusters and one or more internal gaps), it calculates the widest **detected internal** opening. If this width is **strictly smaller** than `2 * (robot_radius + safety_margin)`, it returns `Passability.BLOCKED` immediately. A wide opening at another slice does not undo this early rejection. At equality, the slice does not trigger rejection.
+
+With the standard defaults (`robot_radius=0.089 m`, `safety_margin=0.03 m`), the threshold is **0.238 m**. Callers may override the margin explicitly for both assessment and planning (for example, `0.04 m` gives **0.258 m**). Insufficient clusters, no internal gap, or all detected gaps wide enough yields `UNKNOWN`, never `CLEAR`.
+
+**Interpretation:** `BLOCKED` means *no sufficiently wide internal opening was detected at a remaining sampled cross-section*. This is an intentionally aggressive **operational early rejection**, not a proof that the physical corridor is impassable: unobserved routes outside the retained obstacle clusters are not represented. Avoid permanently deleting a graph edge from a single scan without an explicit reobservation policy. No trusted corridor-boundary argument is accepted.
+
 ## Other useful public functions
 
 | API | Purpose | Output / limitation |
@@ -53,7 +61,7 @@ else:
 | `analyze_edge` | Cluster LiDAR slice returns into lateral obstacles and candidate gaps | `EdgeObservation`; an unseen gap is not inferred free |
 | `points_to_edge_frame`, `edge_to_world` | Transform points / waypoint coordinates | Use the same edge and fixed frame |
 | `detect_bottlenecks` | Flag potentially narrow internal gaps | Candidates only, not evidence whole edge is blocked |
-| `assess_passability` | Conservative evidence-based edge assessment | `PassabilityResult` (`CLEAR`, `UNKNOWN`, `BLOCKED`) subject to strict evidence assumptions |
+| `assess_passability` | Detected-opening early rejection | `PassabilityResult`; `BLOCKED` on any remaining slice whose detected internal gaps are all narrower than `2(r+m)`; otherwise `UNKNOWN` |
 | `find_local_passages`, `select_next_local_passage` | Group adjacent overlapping usable gaps | Observation-dependent; does not prove connected free space |
 | `OpeningProgressTracker` | Debug estimated entering, traversing, cleared, off-path states across scans | Stateful; reset on edge/parameter changes |
 | `search_with_fallback` | Lower-level ordered translation search (used internally by `plan_motion`) | `(TrajectorySearchResult, mode)`; rotation represented only in diagnostics |

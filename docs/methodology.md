@@ -4,7 +4,7 @@
 
 ---
 
-**Status:** This document records the original methodology and alternative designs. The Perception Module v1.0 trajectory planner is implemented; see the [Perception Module v1.0 planning strategy](perception-strategy.md) for the implemented decision process and [API reference](perception-api.md) for interfaces and limitations. The controller integration remains incomplete. The 5 × 5 graph gives candidate links, not a prerecorded obstacle map. The challenge is to distinguish a truly blocked edge from a passage with a safe path around obstacles.
+**Status:** This document records the original methodology and alternative designs. The Perception Module v1.1 trajectory planner is implemented; see the [Perception Module v1.1 planning strategy](perception-strategy.md) for the implemented decision process and [API reference](perception-api.md) for interfaces and limitations. The controller integration remains incomplete. The 5 × 5 graph gives candidate links, not a prerecorded obstacle map. The challenge is to distinguish a truly blocked edge from a passage with a safe path around obstacles.
 
 > **Specification vs. enhancement:** The provided navigator expects `obstacle_avoided_target()` to select an obstacle-aware lookahead target and `turtlebot_control()` / `publish_cmd()` to command `/cmd_vel`. LiDAR-based corridor-centering PID is an **optional addition**, not a replacement for those required functions.
 
@@ -30,9 +30,9 @@ Account for an actual sensor offset/rotation, and match readings with appropriat
 
 ## Minimum clearance and obstacle inflation
 
-The assignment states a **0.178 m** TurtleBot width. With an *illustrative* 0.04 m margin on **each side**:
+The assignment states a **0.178 m** TurtleBot width. With the **default 0.03 m margin** on each side:
 
-$$W_{required}=0.178+2(0.04)=0.258\text{ m}$$
+$$W_{required}=0.178+2(0.03)=0.238\text{ m}$$
 
 For a circular-footprint approximation:
 
@@ -46,7 +46,7 @@ These are **tuning examples**, not prescribed safe values; verify the actual foo
 |---|---|---|---|
 | Simple front scan threshold | Fast and easy | Cannot tell bypassable from blocked | Safety check only |
 | Single-scan gap detection | Low overhead | Occlusion and unknown space | Start here |
-| Cross-sectional clearance | Identifies candidate gaps and rejects a **verified unavoidable** bottleneck that is too narrow | Diagonal surfaces, occlusion, and possible bypasses complicate rejection | **Stage 1: early geometric filter** |
+| Cross-sectional clearance | Flags any remaining slice whose **detected internal openings** are all too narrow (operational early rejection; may miss unobserved bypasses) | Diagonal surfaces, occlusion, and possible bypasses complicate rejection | **Stage 1: early geometric filter** |
 | Per-edge accumulated obstacle points | Retains prior observations, moderate overhead | Unknown space remains implicit | Add if needed |
 | Occupancy grid with local pathfinding | Represents observed free, occupied, unknown | Mapping and planning complexity | Defer |
 
@@ -63,7 +63,7 @@ At each cross-section `s`, identify **relevant free intervals** between observed
 
 **Stage 2 — short-horizon motion feasibility (chosen baseline):** For openings that survive Stage 1, **do not require a complete obstacle-aware curve to the next graph node**. First choose a feasible local opening (often a gap midpoint), shift the *existing* pure-pursuit lookahead target toward it, and predict the **short motion that `turtlebot_control()` would actually command**. Evaluate the swept robot footprint along this predicted arc or straight segment, including minimum Euclidean distance to observed obstacle surfaces, corridor bounds, motion feasibility, and ability to stop inside known-safe space. Sample densely or use segment/arc clearance calculations. A straight line to a lookahead point is **not** necessarily the pure-pursuit arc. Reject or modify an unsafe target, and repeat after the next scan.
 
-A locally clear prediction means **safe to take that limited motion**, not that the whole 1.424 m edge has been proven passable. Keep **CLEAR / UNKNOWN / BLOCKED** assessments separate from immediate motion authorization. Lack of LiDAR returns does not certify unobserved space; if no safe short motion or observation maneuver is established, stop. If evidence demonstrates that every possible opening is obstructed, mark the edge blocked and replan. Otherwise remain uncertain. **Full local-trajectory planning** is implemented in Perception Module v1.0; see the [current strategy](perception-strategy.md) and [API reference](perception-api.md). The alternatives below provide design rationale if simple target shifts repeatedly fail on diagonal or staggered obstacles.
+A locally clear prediction means **safe to take that limited motion**, not that the whole 1.424 m edge has been proven passable. Keep **CLEAR / UNKNOWN / BLOCKED** assessments separate from immediate motion authorization. Lack of LiDAR returns does not certify unobserved space; if no safe short motion or observation maneuver is established, stop. In the current implemented early-rejection policy, any remaining slice whose detected internal gaps are all too narrow yields `BLOCKED`; this is not a certified full-corridor barrier. With insufficient opening evidence, return `UNKNOWN`. A graph planner should consider reobservation before permanently removing an edge. **Full local-trajectory planning** is implemented in Perception Module v1.1; see the [current strategy](perception-strategy.md) and [API reference](perception-api.md). The alternatives below provide design rationale if simple target shifts repeatedly fail on diagonal or staggered obstacles.
 
 The final passability decision should combine both stages: **too-narrow unavoidable opening → reject; plausible opening → test a continuous safe trajectory; insufficient evidence → unknown / stop or gather more observations safely**. This is a proposed strategy, not functionality already implemented in the template.
 

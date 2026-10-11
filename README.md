@@ -1,6 +1,6 @@
 # amaze-nav
 
-**Perception Module v1.0** — standalone LiDAR perception and trajectory planning baseline. This is the component version, **not** a release version for the overall amaze-nav project.
+**Perception Module v1.1** — standalone LiDAR perception and trajectory planning baseline. This is the component version, **not** a release version for the overall amaze-nav project.
 
 **LiDAR-based perception, obstacle avoidance, and autonomous TurtleBot maze navigation with ROS 2.**
 
@@ -20,8 +20,11 @@ The provided navigator uses `FOLLOW → BACKTRACK → REPLAN → FOLLOW` for blo
 
 ## Documentation
 
-- **[Perception Module v1.0 — planning strategy](docs/perception-strategy.md)** — start here: destination-first decisions, LiDAR gap detection, trajectory rejection, opening fallbacks, recovery, and replanning.
-- [Perception Module v1.0 — API and integration](docs/perception-api.md) — exact functions, motion plans, 14 strategy labels, and controller contract.
+- [Passability detection audit](docs/perception-passability-audit.md) — known false-positive/false-negative risks, integration guidance, and test gaps.
+
+
+- **[Perception Module v1.1 — planning strategy](docs/perception-strategy.md)** — start here: destination-first decisions, LiDAR gap detection, trajectory rejection, opening fallbacks, recovery, and replanning.
+- [Perception Module v1.1 — API and integration](docs/perception-api.md) — exact functions, motion plans, 14 strategy labels, and controller contract.
 - [Environment setup](docs/setup.md) — clone the repository, configure ROS 2 and Gazebo model paths, build, launch, and troubleshoot.
 
 - [Provided framework & function guide](docs/framework.md) — what's already implemented versus TODOs, modes, ROS interfaces.
