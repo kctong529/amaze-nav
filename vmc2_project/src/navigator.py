@@ -390,6 +390,7 @@ class GridPathFollowerNode(Node):
         self.full_path:  List[Coord] = []
         self.prev_node : Optional[Coord] = None
         self.block_edge: Optional[Tuple[Coord, Coord]] = None
+        self.active_edge: Optional[Tuple[Coord, Coord]] = None  # OUR ADDITION: edge we are driving now
         #TODO: OPTIONAL: you can manually remove edges here using 'self.graph.remove_edge([..., ...], [..., ...]))
 
         # --- ROS I/O ---
@@ -521,6 +522,9 @@ class GridPathFollowerNode(Node):
         # 1. Get the closest graph node to the robot’s current starting position (ns)
         # 2. Get the closest graph node to the goal position (ng)
         # 3. Run A* to get a path (sequence of graph nodes) from ns → ng
+        ns = self.nearest_graph_coord(start_pose)
+        ng = self.nearest_graph_coord(self.goal_pos)
+        grid_path = self.astar_path(self.graph, ns, ng)
 
         path: List[Coord] = [start_pose]
 
@@ -529,6 +533,19 @@ class GridPathFollowerNode(Node):
         # 6. Append all waypoints from the A* grid path (avoiding duplicate points)
         # 7. Ensure the final node (ng) is included
         # 8. Ensure the actual goal position is included as the last waypoint
+        if not grid_path:
+            self.get_logger().warn("A* found NO route to the goal!")
+            return path
+        if math.dist(start_pose, ns) > 1e-6:
+            path.append(ns)
+        for p in grid_path:
+            if math.dist(path[-1], p) > 1e-6:
+                path.append(p)
+        if math.dist(path[-1], ng) > 1e-6:
+            path.append(ng)
+        goal = (float(self.goal_pos[0]), float(self.goal_pos[1]))
+        if math.dist(path[-1], goal) > 1e-6:
+            path.append(goal)
 
         # Return the full planned path as a list of coordinates
         return path
@@ -614,6 +631,23 @@ class GridPathFollowerNode(Node):
             (v_cmd, w_cmd): linear and angular velocity commands.
         """
         return v_cmd, w_cmd
+
+    # --- OUR HELPERS (Workstream C) ---
+    def node_name(self, p: Coord) -> str:
+        """'(r,c)' if p is a graph node, else the rounded (x, y). Only for log messages."""
+        key = (float(p[0]), float(p[1]))
+        if key in self.graph.coord2idx:
+            r, c = self.graph.coord2idx[key]
+            return f"({r},{c})"
+        return f"({p[0]:.3f},{p[1]:.3f})"
+
+    def on_new_edge(self, ga: Coord, gb: Coord):
+        """Called once when FOLLOW starts driving a new edge ga -> gb."""
+        self.get_logger().info(f"Now driving edge {self.node_name(ga)} -> {self.node_name(gb)}")
+        # Forget what perception remembered about the previous edge.
+        # Agree the variable names with the perception owner (Ki Chun).
+        if hasattr(self, 'block_count'):
+            self.block_count = 0
 
     # --- Publisher helpers ---
     def publish_cmd(self, v: float, w: float):
@@ -738,6 +772,18 @@ class GridPathFollowerNode(Node):
             # ~1 line:  Set start_from to the previous node
             # ~1 line:  Replan the global path from new start point and store it in self.full_path.
             # ~1 line:  Set the mode back to FOLLOW
+            if self.block_edge is not None:
+                a, b = self.block_edge
+                if a in self.graph.coord2idx and b in self.graph.coord2idx and self.graph.has_edge(a, b):
+                    self.graph.remove_edge(a, b)
+                    self.get_logger().info(f"Removed blocked edge {self.node_name(a)} <-> {self.node_name(b)}")
+                else:
+                    self.get_logger().warn(f"Cannot remove {self.block_edge}: not a graph edge")
+            start_from = self.prev_node if self.prev_node is not None else (self.x, self.y)
+            self.path_plan(start_from)
+            self.block_edge = None
+            self.active_edge = None
+            self._set_mode('FOLLOW')
             self.draw_scene(robot=robot_position)
             return
 
@@ -745,7 +791,7 @@ class GridPathFollowerNode(Node):
         if self.mode == 'BACKTRACK':
             # TODO: YOUR CODE HERE
             # ~1 line: set a temporary goal as the previous node
-            temp_goal = ...
+            temp_goal = self.prev_node
 
             back_path = [robot_position, temp_goal]
             target = lookahead_point(back_path, robot_position, self.lookahead_dist)
@@ -755,9 +801,17 @@ class GridPathFollowerNode(Node):
 
             # TODO: YOUR CODE HERE: ~3 lines
             # If the distance between the current turtlebot position ('robot') and temp_goal is less than the tolerance ('self.node_tol'), stop the turtlebot immediately and set the mode to REPLAN
+            if math.dist(robot_position, temp_goal) < self.node_tol:
+                self.publish_stop()
+                self._set_mode('REPLAN')
             return
 
         # --- MODE: FOLLOW ---
+        # OUR ADDITION: notice when we start a new graph edge (edge identity)
+        if (ga, gb) != self.active_edge:
+            self.active_edge = (ga, gb)
+            self.on_new_edge(ga, gb)
+
         # React if an obstacle has become non-passable
         if not self.is_passable(seg_dir_yaw):
             # TODO: YOUR CODE HERE: ~4 lines
@@ -765,6 +819,11 @@ class GridPathFollowerNode(Node):
             # 2. set 'prev_node' to 'ga' 
             # 3. set 'block_edge' to '(ga, gb)' 
             # 4. set mode to 'BACKTRACK'
+            self.publish_stop()
+            self.prev_node = ga
+            self.block_edge = (ga, gb)
+            self.get_logger().info(f"Edge {self.node_name(ga)} -> {self.node_name(gb)} is BLOCKED")
+            self._set_mode('BACKTRACK')
             self.draw_scene(robot=robot_position)
             return
             
