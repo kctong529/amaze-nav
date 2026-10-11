@@ -1,6 +1,8 @@
 
 #!/usr/bin/env python3
 
+from collections import Counter
+
 import cv2
 import numpy as np
 import rclpy
@@ -11,7 +13,7 @@ from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from perception import analyze_edge, detect_bottlenecks, assess_passability, plan_candidate_trajectory, search_candidate_trajectories
+from perception import analyze_edge, detect_bottlenecks, assess_passability, plan_candidate_trajectory, search_with_fallback, search_intermediate_alignment, search_rotate_now, search_rotate_then_approach, search_reposition_then_rotate, OpeningProgressTracker, TrajectoryResult, search_rotate_to_destination
 from trajectory_display import select_representatives, group_rejections
 
 from perception_geometry import (
@@ -40,7 +42,7 @@ CLUSTER_MAX_GAP = 0.05
 CLUSTER_MIN_POINTS = 3
 
 ROBOT_WIDTH = 0.178
-SAFETY_MARGIN = 0.04
+SAFETY_MARGIN = 0.03
 
 REQUIRED_WIDTH = ROBOT_WIDTH + 2 * SAFETY_MARGIN
 
@@ -372,12 +374,14 @@ def draw_edge_frame(
     obstacle_intervals=None,
     candidate_gaps=None,
     trajectory_st=None,
+    alignment_st=None,
     all_trajectories_st=None,
     rejected_trajectories=None,
     display_mode="feasible",
     display_limit=15,
     total_feasible=0,
     total_rejected=0,
+    required_width=REQUIRED_WIDTH,
     size=700,
     scale=300,
 ):
@@ -480,7 +484,7 @@ def draw_edge_frame(
         candidate_gaps,
         to_pixel,
         slice_s,
-        REQUIRED_WIDTH,
+        required_width,
     )
 
     # Draw only a representative sample in debug mode, under viable paths.
@@ -512,6 +516,13 @@ def draw_edge_frame(
     if trajectory_st is not None and len(trajectory_st) > 1:
         coords = np.asarray([to_pixel(s,t) for s,t in trajectory_st], dtype=np.int32)
         cv2.polylines(image, [coords], False, (0, 155, 0), 2)
+
+    # Alignment stop is a distinct motion phase (yellow marker).
+    if alignment_st is not None:
+        ax, ay = to_pixel(*alignment_st)
+        cv2.circle(image, (ax, ay), 7, (0, 210, 255), -1)
+        cv2.putText(image, "STOP + ROTATE", (ax + 10, ay - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 145, 185), 1)
 
     # Draw the robot in edge coordinates.
     if robot_st is not None:
@@ -601,8 +612,13 @@ class LidarExplorer(Node):
         self.latest_odom = None
         self.latest_world_points = None
         self.latest_edge_observation = None
+        self.planner_safety_margin = SAFETY_MARGIN
+        self.opening_tracker = OpeningProgressTracker(robot_radius=ROBOT_WIDTH / 2, safety_margin=self.planner_safety_margin)
+        self.latest_opening_diagnostics = ()
+        self.planner_max_curvature = 8.0
         self.latest_slice_results = []
         self.latest_trajectory = None
+        self.latest_alignment_st = None
         self.latest_feasible_trajectories = []
         self.latest_rejected_trajectories = []
         self.latest_sensor_xy = None
@@ -753,9 +769,17 @@ class LidarExplorer(Node):
             lateral_range=1.0,
         )
         self.latest_edge_observation = observation
+        self.latest_robot_st, self.latest_opening_diagnostics = self.opening_tracker.update(
+            observation, (
+                transform.transform.translation.x,
+                transform.transform.translation.y,
+            ),
+        )
 
         bottlenecks = detect_bottlenecks(
             self.latest_edge_observation,
+            robot_radius=ROBOT_WIDTH / 2,
+            safety_margin=self.planner_safety_margin,
         )
 
         if bottlenecks:
@@ -843,12 +867,14 @@ class LidarExplorer(Node):
             obstacle_intervals=obstacle_intervals,
             candidate_gaps=candidate_gaps,
             trajectory_st=(self.latest_trajectory.path_st if self.latest_trajectory is not None and self.latest_trajectory.feasible else None),
+            alignment_st=self.latest_alignment_st,
             all_trajectories_st=[t.path_st for t in shown_feasible],
             rejected_trajectories=shown_rejected,
             display_mode=self.display_mode,
             display_limit=self.display_limit,
             total_feasible=len(self.latest_feasible_trajectories),
             total_rejected=len(self.latest_rejected_trajectories),
+            required_width=ROBOT_WIDTH + 2 * self.planner_safety_margin,
         )
 
         # Draw the odometry-frame visualization.
@@ -923,7 +949,10 @@ class LidarExplorer(Node):
             self.slice_s = 0.712
             self.latest_edge_observation = None
             self.latest_slice_results = []
+            self.opening_tracker.reset()
+            self.latest_opening_diagnostics = ()
             self.latest_trajectory = None
+            self.latest_alignment_st = None
             self.latest_feasible_trajectories = []
             self.latest_rejected_trajectories = []
             self.log_selected_edge()
@@ -936,7 +965,10 @@ class LidarExplorer(Node):
             self.slice_s = 0.712
             self.latest_edge_observation = None
             self.latest_slice_results = []
+            self.opening_tracker.reset()
+            self.latest_opening_diagnostics = ()
             self.latest_trajectory = None
+            self.latest_alignment_st = None
             self.latest_feasible_trajectories = []
             self.latest_rejected_trajectories = []
             self.log_selected_edge()
@@ -957,26 +989,227 @@ class LidarExplorer(Node):
         elif key == ord("p"):
             self.log_slice_profile()
 
+        elif key == ord("k"):
+            self.planner_max_curvature = min(15.0, self.planner_max_curvature + 1.0)
+            self.get_logger().info(f"Planner max curvature: {self.planner_max_curvature:.1f} /m")
+
+        elif key == ord("j"):
+            self.planner_max_curvature = max(2.0, self.planner_max_curvature - 1.0)
+            self.get_logger().info(f"Planner max curvature: {self.planner_max_curvature:.1f} /m")
+
+        elif key == ord("m"):
+            self.planner_safety_margin = max(0.0, round(self.planner_safety_margin - 0.01, 3))
+            self.opening_tracker.safety_margin = self.planner_safety_margin
+            self.opening_tracker.reset()
+            self.latest_edge_observation = None
+            self.latest_trajectory = None
+            self.latest_alignment_st = None
+            self.latest_feasible_trajectories = []
+            self.latest_rejected_trajectories = []
+            self.get_logger().info(
+                f"Safety margin={self.planner_safety_margin:.3f} m; "
+                f"required opening={ROBOT_WIDTH + 2 * self.planner_safety_margin:.3f} m. "
+                "Wait for next scan, then press t."
+            )
+
+        elif key == ord("n"):
+            self.planner_safety_margin = min(0.06, round(self.planner_safety_margin + 0.01, 3))
+            self.opening_tracker.safety_margin = self.planner_safety_margin
+            self.opening_tracker.reset()
+            self.latest_edge_observation = None
+            self.latest_trajectory = None
+            self.latest_alignment_st = None
+            self.latest_feasible_trajectories = []
+            self.latest_rejected_trajectories = []
+            self.get_logger().info(
+                f"Safety margin={self.planner_safety_margin:.3f} m; "
+                f"required opening={ROBOT_WIDTH + 2 * self.planner_safety_margin:.3f} m. "
+                "Wait for next scan, then press t."
+            )
+
         elif key == ord("t"):
+            self.get_logger().info(
+                f"Planner geometry: radius={ROBOT_WIDTH / 2:.3f} m, "
+                f"safety_margin={self.planner_safety_margin:.3f} m, "
+                f"required_clearance={ROBOT_WIDTH / 2 + self.planner_safety_margin:.3f} m"
+            )
             if self.latest_edge_observation is None or self.latest_sensor_xy is None:
                 self.get_logger().info("No transformed scan available yet")
             else:
-                search = search_candidate_trajectories(
+                start, end = self.selected_edge
+                robot_s, robot_t = self.latest_robot_st
+                edge_yaw = float(np.arctan2(end[1] - start[1], end[0] - start[0]))
+                rel_yaw = float(np.arctan2(
+                    np.sin(self.latest_sensor_yaw - edge_yaw),
+                    np.cos(self.latest_sensor_yaw - edge_yaw),
+                ))
+                self.get_logger().info(
+                    f"Opening diagnostic: edge={start}->{end}, "
+                    f"robot=(s={robot_s:.3f}, t={robot_t:.3f}), "
+                    f"yaw_relative={np.degrees(rel_yaw):+.1f} deg"
+                )
+                # Print nearby candidates first; log all observed gaps for transparency.
+                for opening in sorted(self.latest_opening_diagnostics,
+                                      key=lambda g: abs(g.slice_s - robot_s)):
+                    self.get_logger().info(
+                        f"Opening s={opening.slice_s:.2f} "
+                        f"gap=[{opening.gap_left:+.3f}, {opening.gap_right:+.3f}] "
+                        f"usable_t=[{opening.usable_left:+.3f}, {opening.usable_right:+.3f}] "
+                        f"state={opening.state}, entered={opening.observed_entry}, "
+                        f"v0.14_would_filter={opening.passed_by_longitudinal_rule}"
+                    )
+                stage_diagnostics = {}
+                search, planner_mode = search_with_fallback(
                     self.latest_edge_observation,
                     self.latest_sensor_xy,
                     robot_yaw=self.latest_sensor_yaw,
+                    max_curvature=self.planner_max_curvature,
+                    robot_radius=ROBOT_WIDTH / 2, safety_margin=self.planner_safety_margin,
+                    diagnostics=stage_diagnostics,
                 )
+                passage = stage_diagnostics.get("selected_passage")
+                if passage is not None:
+                    self.get_logger().info(
+                        f"Next passage: s=[{passage.s_start:.2f}, {passage.s_end:.2f}], "
+                        f"usable_t=[{passage.usable_left:+.3f}, {passage.usable_right:+.3f}], "
+                        f"local goal=(s={passage.s_end:.2f}, t={passage.target_t:+.3f})"
+                    )
+                for stage, stage_result in stage_diagnostics.items():
+                    if stage in ("selected_passage", "destination alignment"):
+                        continue
+                    stage_counts = Counter(trial.reason for trial in stage_result.rejected)
+                    self.get_logger().info(
+                        f"Stage {stage}: feasible={len(stage_result.feasible)}, "
+                        f"rejected={dict(stage_counts)}"
+                    )
+                self.get_logger().info(f"Planner: {planner_mode}" + (" (NOT full-edge passability)" if planner_mode in ("short approach only", "near-opening traverse only", "next opening only", "final approach only", "goal-reached continuation only") else ""))
+                self.latest_alignment_st = None
                 self.latest_feasible_trajectories = list(search.feasible)
                 self.latest_rejected_trajectories = list(search.rejected)
                 if search.feasible:
                     self.latest_trajectory = search.feasible[0]
                 else:
-                    self.latest_trajectory = plan_candidate_trajectory(
+                    self.latest_trajectory = None
+                    destination_alignment = stage_diagnostics.get("destination alignment")
+                    if destination_alignment is not None:
+                        self.latest_trajectory = TrajectoryResult(
+                            True, "STOP + ROTATE toward destination, then re-scan",
+                            destination_alignment.path_st,
+                            destination_alignment.clearance, 0.0)
+                        self.latest_feasible_trajectories = [self.latest_trajectory]
+                        self.latest_alignment_st = tuple(self.latest_robot_st)
+                        self.get_logger().warn(
+                            f"ROTATE THEN DESTINATION: yaw={np.degrees(destination_alignment.departure_yaw):.1f} deg; "
+                            "STOP, rotate, re-scan, replan before translating")
+                    if self.latest_trajectory is None:
+                        rotate_now = search_rotate_now(
+                            self.latest_edge_observation,
+                            self.latest_sensor_xy,
+                            robot_yaw=self.latest_sensor_yaw,
+                            robot_radius=ROBOT_WIDTH / 2, safety_margin=self.planner_safety_margin,
+                        )
+                        if rotate_now is not None:
+                            self.latest_trajectory = TrajectoryResult(
+                                True,
+                                "ROTATE NOW then follow straight sampled continuation; NOT full-edge passability",
+                                rotate_now.continuation_st,
+                                rotate_now.clearance,
+                                0.0,
+                                rotate_now.next_gap,
+                            )
+                            self.latest_feasible_trajectories = [self.latest_trajectory] if self.latest_trajectory else []
+                            self.latest_alignment_st = rotate_now.alignment_st
+                            self.get_logger().warn(
+                                f"ROTATE NOW at edge ST={rotate_now.alignment_st}: "
+                                f"desired yaw={np.degrees(rotate_now.departure_yaw):.1f} deg; "
+                                f"continue toward opening s={rotate_now.next_gap.s:.2f}; "
+                                "debug only — STOP, rotate, then recheck scan before moving"
+                            )
+                        else:
+                            aligned = search_rotate_then_approach(
+                                self.latest_edge_observation,
+                                self.latest_sensor_xy,
+                                robot_yaw=self.latest_sensor_yaw,
+                                max_curvature=self.planner_max_curvature,
+                                robot_radius=ROBOT_WIDTH / 2, safety_margin=self.planner_safety_margin,
+                            )
+                            if aligned is not None:
+                                self.latest_trajectory = aligned.continuation
+                                self.latest_feasible_trajectories = [aligned.continuation]
+                                self.latest_alignment_st = aligned.alignment_st
+                                self.get_logger().warn(
+                                    f"ALIGN FIRST (hypothetical): tested {aligned.headings_tested} "
+                                    f"headings, {aligned.headings_with_paths} yielded curves; "
+                                    f"current yaw={np.degrees(self.latest_sensor_yaw):.1f} deg, "
+                                    f"desired yaw={np.degrees(aligned.departure_yaw):.1f} deg, "
+                                    f"rotation={np.degrees(aligned.yaw_change):+.1f} deg. "
+                                    "STOP, rotate, RE-SCAN and replan before translating."
+                                )
+                            else:
+                                self.get_logger().info(
+                                    "ALIGN FIRST search: no hypothetical heading yielded "
+                                    "a feasible short approach, or current rotation clearance was insufficient"
+                                )
+                                maneuver = search_intermediate_alignment(
+                                self.latest_edge_observation,
+                                self.latest_sensor_xy,
+                                robot_yaw=self.latest_sensor_yaw,
+                                max_curvature=self.planner_max_curvature,
+                                robot_radius=ROBOT_WIDTH / 2, safety_margin=self.planner_safety_margin,
+                            )
+                                if maneuver is not None:
+                                    # Display the two translations as a single polyline for
+                                    # debugging only. STOP + ROTATE at alignment_st is required.
+                                    combined = (maneuver.approach.path_st +
+                                                maneuver.continuation_st[1:])
+                                    self.latest_trajectory = type(maneuver.approach)(
+                                        True,
+                                        "Two translation phases; STOP and rotate at alignment marker",
+                                        combined,
+                                        maneuver.clearance,
+                                        maneuver.approach.max_curvature,
+                                        maneuver.next_gap,
+                                    )
+                                    self.latest_feasible_trajectories = [self.latest_trajectory]
+                                    self.latest_alignment_st = maneuver.alignment_st
+                                    self.get_logger().warn(
+                                        f"INTERMEDIATE ALIGNMENT: travel to edge ST={maneuver.alignment_st}, "
+                                        f"STOP, rotate in place to yaw={np.degrees(maneuver.departure_yaw):.1f} deg, "
+                                        f"then advance toward next gap s={maneuver.next_gap.s:.2f}; "
+                                        "debug-only; not an executable motion command"
+                                    )
+                if self.latest_trajectory is None:
+                    reposition_diagnostics = {}
+                    reposition = search_reposition_then_rotate(
                         self.latest_edge_observation,
                         self.latest_sensor_xy,
                         robot_yaw=self.latest_sensor_yaw,
+                        robot_radius=ROBOT_WIDTH / 2, safety_margin=self.planner_safety_margin,
+                        diagnostics=reposition_diagnostics,
                     )
-                from collections import Counter
+                    self.get_logger().info(
+                        f"LATERAL REPOSITION diagnostics: {reposition_diagnostics}"
+                    )
+                    if reposition is not None:
+                        # For plotting ONLY: stop and rotate at the yellow point.
+                        visual_path = (reposition.first_leg_st +
+                                       reposition.second_leg_st[1:])
+                        self.latest_trajectory = TrajectoryResult(
+                            True,
+                            "LATERAL REPOSITION -> STOP/ROTATE -> CONTINUE (two phases)",
+                            visual_path,
+                            reposition.observed_clearance,
+                            0.0,
+                            reposition.next_gap,
+                        )
+                        self.latest_alignment_st = reposition.rotation_st
+                        self.latest_feasible_trajectories = [self.latest_trajectory]
+                        self.get_logger().warn(
+                            f"LATERAL REPOSITION: first end={reposition.rotation_st}, "
+                            f"STOP, rotate to yaw={np.degrees(reposition.departure_yaw):.1f} deg, "
+                            f"then proceed toward opening s={reposition.next_gap.s:.2f}; "
+                            "visualization only; re-scan at the stop before translating"
+                        )
                 counts = Counter(trial.reason for trial in search.rejected)
                 self.get_logger().info(
                     f"Evaluated {len(search.feasible) + len(search.rejected)} curves: "
@@ -991,6 +1224,7 @@ class LidarExplorer(Node):
                     f"Trajectory: feasible={trial.feasible}; {trial.reason}; "
                     f"clearance={trial.min_observed_clearance}; "
                     f"curvature={trial.max_curvature}; candidate={trial.candidate}"
+                    if trial is not None else "No feasible sampled trajectory"
                 )
 
         elif key == ord("b"):
@@ -1003,6 +1237,7 @@ class LidarExplorer(Node):
                 result = assess_passability(
                     self.latest_edge_observation,
                     robot_position=start,
+                    robot_radius=ROBOT_WIDTH / 2, safety_margin=self.planner_safety_margin,
                 )
                 self.get_logger().info(
                     f"Edge {start} -> {end}: {result.status.name} - "
