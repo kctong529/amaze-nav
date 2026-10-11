@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 
 import cv2
@@ -10,7 +11,8 @@ from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from perception import analyze_edge, detect_bottlenecks, assess_passability, plan_candidate_trajectory
+from perception import analyze_edge, detect_bottlenecks, assess_passability, plan_candidate_trajectory, search_candidate_trajectories
+from trajectory_display import select_representatives, group_rejections
 
 from perception_geometry import (
     transform_points_2d,
@@ -370,6 +372,12 @@ def draw_edge_frame(
     obstacle_intervals=None,
     candidate_gaps=None,
     trajectory_st=None,
+    all_trajectories_st=None,
+    rejected_trajectories=None,
+    display_mode="feasible",
+    display_limit=15,
+    total_feasible=0,
+    total_rejected=0,
     size=700,
     scale=300,
 ):
@@ -475,7 +483,32 @@ def draw_edge_frame(
         REQUIRED_WIDTH,
     )
 
-    # Overlay last requested candidate trajectory (green if feasible).
+    # Draw only a representative sample in debug mode, under viable paths.
+    if display_mode == "debug" and rejected_trajectories:
+        for trial in rejected_trajectories:
+            if len(trial.path_st) < 2:
+                continue
+            if trial.reason == "Too close to measured returns":
+                color = (70, 70, 210)     # red in OpenCV BGR
+            elif trial.reason == "Excessive curvature":
+                color = (190, 115, 160)   # purple
+            else:
+                color = (165, 165, 165)   # grey
+            coords = np.asarray(
+                [to_pixel(s, t) for s, t in trial.path_st], dtype=np.int32
+            )
+            cv2.polylines(image, [coords], False, color, 1, cv2.LINE_AA)
+
+    # Thin light-blue paths: every feasible sampled trajectory from the
+    # last press of 't'. The selected best path is drawn over them.
+    if display_mode != "best" and all_trajectories_st:
+        for path in all_trajectories_st:
+            if len(path) > 1:
+                coords = np.asarray([to_pixel(s, t) for s, t in path], dtype=np.int32)
+                cv2.polylines(image, [coords], False, (235, 190, 100), 1, cv2.LINE_AA)
+
+    # Overlay best candidate trajectory in thicker green.
+
     if trajectory_st is not None and len(trajectory_st) > 1:
         coords = np.asarray([to_pixel(s,t) for s,t in trajectory_st], dtype=np.int32)
         cv2.polylines(image, [coords], False, (0, 155, 0), 2)
@@ -492,6 +525,18 @@ def draw_edge_frame(
                 (255, 0, 0),
                 -1,
             )
+
+    # Compact display counters; computation is unaffected by display limits.
+    cv2.putText(
+        image,
+        f"Mode: {display_mode}  (+/-: {display_limit} alternatives)",
+        (15, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (45, 45, 45), 1,
+    )
+    cv2.putText(
+        image,
+        f"Evaluated: {total_feasible} feasible / {total_rejected} rejected",
+        (15, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (45, 45, 45), 1,
+    )
 
     # Labels.
     cv2.putText(
@@ -518,7 +563,8 @@ def draw_edge_frame(
         image,
         "Use [ and ] to move the slice\n"
         "Use , and . to change the edge\n"
-        "Use p to log profile; b to assess edge",
+        "Use p to log; b to assess; t to plan\n"
+        "Use v to change view; +/- to adjust count",
         (15, size - 60),
     )
 
@@ -557,7 +603,12 @@ class LidarExplorer(Node):
         self.latest_edge_observation = None
         self.latest_slice_results = []
         self.latest_trajectory = None
+        self.latest_feasible_trajectories = []
+        self.latest_rejected_trajectories = []
         self.latest_sensor_xy = None
+        self.latest_sensor_yaw = None
+        self.display_mode = "feasible"
+        self.display_limit = 15
 
         # The latest scan awaiting its timestamp-matched TF.
         self.pending_scan = None
@@ -759,12 +810,29 @@ class LidarExplorer(Node):
         )
 
         self.latest_sensor_xy = sensor_xy
+        q = transform.transform.rotation
+        self.latest_sensor_yaw = float(np.arctan2(
+            2.0 * (q.w * q.z + q.x * q.y),
+            1.0 - 2.0 * (q.y * q.y + q.z * q.z),
+        ))
 
         sensor_st = points_to_edge_frame(
             np.asarray([sensor_xy]),
             start,
             end,
         )[0]
+
+        # Only render diverse examples; never change search or scoring.
+        alternatives = [
+            trial for trial in self.latest_feasible_trajectories
+            if trial is not self.latest_trajectory
+        ]
+        shown_feasible = select_representatives(alternatives, self.display_limit)
+        shown_rejected = group_rejections(
+            self.latest_rejected_trajectories,
+            per_reason=min(5, self.display_limit),
+            include_other=False,
+        ) if self.display_mode == "debug" else []
 
         # Draw the edge-aligned visualization.
         draw_edge_frame(
@@ -775,6 +843,12 @@ class LidarExplorer(Node):
             obstacle_intervals=obstacle_intervals,
             candidate_gaps=candidate_gaps,
             trajectory_st=(self.latest_trajectory.path_st if self.latest_trajectory is not None and self.latest_trajectory.feasible else None),
+            all_trajectories_st=[t.path_st for t in shown_feasible],
+            rejected_trajectories=shown_rejected,
+            display_mode=self.display_mode,
+            display_limit=self.display_limit,
+            total_feasible=len(self.latest_feasible_trajectories),
+            total_rejected=len(self.latest_rejected_trajectories),
         )
 
         # Draw the odometry-frame visualization.
@@ -850,6 +924,8 @@ class LidarExplorer(Node):
             self.latest_edge_observation = None
             self.latest_slice_results = []
             self.latest_trajectory = None
+            self.latest_feasible_trajectories = []
+            self.latest_rejected_trajectories = []
             self.log_selected_edge()
 
         elif key == ord(","):
@@ -861,7 +937,22 @@ class LidarExplorer(Node):
             self.latest_edge_observation = None
             self.latest_slice_results = []
             self.latest_trajectory = None
+            self.latest_feasible_trajectories = []
+            self.latest_rejected_trajectories = []
             self.log_selected_edge()
+
+        elif key == ord("v"):
+            modes = ("best", "feasible", "debug")
+            self.display_mode = modes[(modes.index(self.display_mode) + 1) % len(modes)]
+            self.get_logger().info(f"Trajectory display: {self.display_mode}")
+
+        elif key in (ord("+"), ord("=")):
+            self.display_limit = min(60, self.display_limit + 5)
+            self.get_logger().info(f"Trajectory alternatives: {self.display_limit}")
+
+        elif key in (ord("-"), ord("_")):
+            self.display_limit = max(0, self.display_limit - 5)
+            self.get_logger().info(f"Trajectory alternatives: {self.display_limit}")
 
         elif key == ord("p"):
             self.log_slice_profile()
@@ -870,11 +961,32 @@ class LidarExplorer(Node):
             if self.latest_edge_observation is None or self.latest_sensor_xy is None:
                 self.get_logger().info("No transformed scan available yet")
             else:
-                self.latest_trajectory = plan_candidate_trajectory(
+                search = search_candidate_trajectories(
                     self.latest_edge_observation,
                     self.latest_sensor_xy,
+                    robot_yaw=self.latest_sensor_yaw,
+                )
+                self.latest_feasible_trajectories = list(search.feasible)
+                self.latest_rejected_trajectories = list(search.rejected)
+                if search.feasible:
+                    self.latest_trajectory = search.feasible[0]
+                else:
+                    self.latest_trajectory = plan_candidate_trajectory(
+                        self.latest_edge_observation,
+                        self.latest_sensor_xy,
+                        robot_yaw=self.latest_sensor_yaw,
+                    )
+                from collections import Counter
+                counts = Counter(trial.reason for trial in search.rejected)
+                self.get_logger().info(
+                    f"Evaluated {len(search.feasible) + len(search.rejected)} curves: "
+                    f"feasible={len(search.feasible)}, rejected={dict(counts)}"
                 )
                 trial = self.latest_trajectory
+                self.get_logger().info(
+                    f"Feasible sampled curves: {len(self.latest_feasible_trajectories)} "
+                    f"(including alternative heading-tangent control lengths)"
+                )
                 self.get_logger().info(
                     f"Trajectory: feasible={trial.feasible}; {trial.reason}; "
                     f"clearance={trial.min_observed_clearance}; "

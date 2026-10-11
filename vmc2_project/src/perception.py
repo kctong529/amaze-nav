@@ -333,6 +333,7 @@ def assess_passability(
     )
 
 
+
 @dataclass(frozen=True)
 class GapCandidate:
     s: float
@@ -397,52 +398,226 @@ def evaluate_trajectory(
     safety_margin: float = 0.04,
     sample_spacing: float = 0.025,
     max_curvature: float = 5.0,
+    robot_yaw: Optional[float] = None,
+    max_heading_error: float = np.deg2rad(30.0),
+    _accepted_results: Optional[list[TrajectoryResult]] = None,
+    _evaluated_results: Optional[list[TrajectoryResult]] = None,
+    waypoint_time_factors: tuple[float, ...] = (0.8, 1.0, 1.2),
 ) -> TrajectoryResult:
-    """Evaluate a quadratic Bezier passing through a selected gap center.
+    """Evaluate sampled curves passing through one observed gap candidate.
 
-    Collision checking uses distance to OBSERVED returns only. A feasible
-    result is a *candidate*, not proof that occluded space is free.
+    If robot_yaw is known, use a CUBIC Bezier whose first control point is
+    along the robot's actual heading. The cubic also passes through the gap
+    at a fixed interpolation parameter and ends at the edge endpoint.
+    Different first-control-point distances are tried to find a usable bend.
+
+    Without robot_yaw, preserve the original quadratic construction.
+    Only observed LiDAR returns are collision checked (unknown space is not).
     """
-    if not np.isfinite([robot_radius, safety_margin, sample_spacing, max_curvature]).all() or robot_radius <= 0 or safety_margin < 0 or sample_spacing <= 0 or max_curvature <= 0:
+    if (not np.isfinite([robot_radius, safety_margin, sample_spacing, max_curvature]).all()
+            or robot_radius <= 0 or safety_margin < 0
+            or sample_spacing <= 0 or max_curvature <= 0):
         raise ValueError("Invalid trajectory parameters")
-    start = points_to_edge_frame(np.asarray([robot_position], dtype=float), observation.start, observation.end)[0]
+    if not np.isfinite(max_heading_error) or not 0 < max_heading_error <= np.pi:
+        raise ValueError("max_heading_error must be in (0, pi]")
+    if robot_yaw is not None and not np.isfinite(robot_yaw):
+        raise ValueError("robot_yaw must be finite")
+
+    start = points_to_edge_frame(
+        np.asarray([robot_position], dtype=float), observation.start, observation.end
+    )[0]
     end = np.array([observation.length, 0.0])
     gap = np.array([candidate.s, candidate.t])
-    direction = end[0] - start[0]
-    if direction <= 0.05 or gap[0] <= start[0] + 0.05 or gap[0] >= end[0] - 0.05:
-        return TrajectoryResult(False, "Gap is not between the robot and edge destination", candidate=candidate)
-    u = float((gap[0] - start[0]) / direction)
-    p1 = (gap - (1 - u)**2 * start - u**2 * end) / (2 * u * (1 - u))
-    n_samples = max(24, int(np.ceil(2 * np.linalg.norm(end-start) / sample_spacing)))
-    ts = np.linspace(0, 1, n_samples + 1)
-    points = ((1-ts)**2)[:,None]*start + (2*(1-ts)*ts)[:,None]*p1 + (ts**2)[:,None]*end
-    path_st = tuple((float(x),float(y)) for x,y in points)
-    # Disallow backward travel along the edge or large lateral excursions.
-    if np.any(np.diff(points[:,0]) <= 0):
-        return TrajectoryResult(False, "Trajectory reverses along the edge", path_st=path_st, candidate=candidate)
-    if np.max(np.abs(points[:,1])) > 1.0:
-        return TrajectoryResult(False, "Trajectory leaves the 1 m analysis band", path_st=path_st, candidate=candidate)
-    derivatives = 2 * ((1-ts)[:,None]*(p1-start) + ts[:,None]*(end-p1))
-    second = 2*(end - 2*p1 + start)
-    speed2 = np.sum(derivatives**2, axis=1)
-    if np.any(speed2 < 1e-8):
-        return TrajectoryResult(False, "Degenerate curve", path_st=path_st, candidate=candidate)
-    curvature = np.abs(derivatives[:,0]*second[1] - derivatives[:,1]*second[0]) / np.maximum(speed2, 1e-8)**1.5
-    worst = float(np.max(curvature))
-    if worst > max_curvature:
-        return TrajectoryResult(False, "Excessive curvature", path_st=path_st, max_curvature=worst, candidate=candidate)
+    remaining = end[0] - start[0]
+    if remaining <= 0.05 or gap[0] <= start[0] + 0.05 or gap[0] >= end[0] - 0.05:
+        result = TrajectoryResult(False, "Gap is not between the robot and edge destination", candidate=candidate)
+        if _evaluated_results is not None:
+            _evaluated_results.append(result)
+        return result
+
+    u = float((gap[0] - start[0]) / remaining)
+    n_samples = max(24, int(np.ceil(2 * np.linalg.norm(end - start) / sample_spacing)))
+    ts = np.linspace(0.0, 1.0, n_samples + 1)
     obstacles = observation.obstacle_points_st
     if len(obstacles) == 0:
-        return TrajectoryResult(False, "No measured obstacles; cannot validate this gap", path_st=path_st, candidate=candidate)
-    # Chunked nearest-neighbor distances avoid allocating a massive matrix.
-    min_d2 = float('inf')
-    for chunk in np.array_split(points, max(1, int(np.ceil(len(points)/128)))):
-        d2 = np.sum((chunk[:,None,:] - obstacles[None,:,:])**2, axis=2)
-        min_d2 = min(min_d2, float(np.min(d2)))
-    measured_clearance = float(np.sqrt(min_d2))
-    if measured_clearance < robot_radius + safety_margin:
-        return TrajectoryResult(False, "Too close to measured returns", path_st, measured_clearance, worst, candidate)
-    return TrajectoryResult(True, "Sampled curve avoids observed returns (unknown space not checked)", path_st, measured_clearance, worst, candidate)
+        result = TrajectoryResult(False, "No measured obstacles; cannot validate this gap", candidate=candidate)
+        if _evaluated_results is not None:
+            _evaluated_results.append(result)
+        return result
+
+    control_sets = []
+    if robot_yaw is None:
+        control = (gap - (1-u)**2 * start - u**2 * end) / (2*u*(1-u))
+        control_sets.append((start, control, end))
+    else:
+        edge_yaw = float(np.arctan2(
+            observation.end[1] - observation.start[1],
+            observation.end[0] - observation.start[0],
+        ))
+        relative_yaw = float(np.arctan2(
+            np.sin(robot_yaw - edge_yaw), np.cos(robot_yaw - edge_yaw)
+        ))
+        direction = np.array([np.cos(relative_yaw), np.sin(relative_yaw)])
+        # A forward-monotone candidate cannot begin facing sideways/backward.
+        # This calls for alignment, not a declaration that the edge is blocked.
+        if direction[0] <= 1e-5:
+            result = TrajectoryResult(False, "Initial heading points away from edge; align first", candidate=candidate)
+            if _evaluated_results is not None:
+                _evaluated_results.append(result)
+            return result
+        for time_factor in waypoint_time_factors:
+            if not np.isfinite(time_factor) or time_factor <= 0:
+                raise ValueError("waypoint_time_factors must be finite positive numbers")
+            waypoint_u = float(np.clip(u * time_factor, 0.12, 0.88))
+            for factor in (0.12, 0.25, 0.40, 0.65, 0.90):
+                p1 = start + factor * remaining * direction
+                # Keep B(waypoint_u) exactly on the selected gap center.
+                # Varying the parameter changes the approach shape while
+                # preserving the robot-heading tangent at the start.
+                denom = 3 * (1-waypoint_u) * waypoint_u**2
+                p2 = (gap - (1-waypoint_u)**3*start
+                      - 3*(1-waypoint_u)**2*waypoint_u*p1
+                      - waypoint_u**3*end) / denom
+                control_sets.append((start, p1, p2, end))
+
+    failures = []
+    successes = []
+    for controls in control_sets:
+        if len(controls) == 3:
+            p0, p1, p2 = controls
+            points = ((1-ts)**2)[:, None]*p0 + (2*(1-ts)*ts)[:, None]*p1 + (ts**2)[:, None]*p2
+            first = 2*((1-ts)[:, None]*(p1-p0) + ts[:, None]*(p2-p1))
+            second = np.broadcast_to(2*(p2-2*p1+p0), first.shape)
+        else:
+            p0, p1, p2, p3 = controls
+            points = ((1-ts)**3)[:, None]*p0 + (3*(1-ts)**2*ts)[:, None]*p1 + (3*(1-ts)*ts**2)[:, None]*p2 + (ts**3)[:, None]*p3
+            first = (
+                3*((1-ts)**2)[:, None]*(p1-p0)
+                + 6*((1-ts)*ts)[:, None]*(p2-p1)
+                + 3*(ts**2)[:, None]*(p3-p2)
+            )
+            second = 6*(1-ts)[:, None]*(p2-2*p1+p0) + 6*ts[:, None]*(p3-2*p2+p1)
+        path_st = tuple((float(x), float(y)) for x, y in points)
+        def reject(reason, *, clearance=None, curvature=None):
+            failures.append(reason)
+            if _evaluated_results is not None:
+                _evaluated_results.append(TrajectoryResult(
+                    False, reason, path_st, clearance, curvature, candidate
+                ))
+
+        if np.any(np.diff(points[:, 0]) <= 1e-9):
+            reject("Trajectory reverses along the edge")
+            continue
+        if np.max(np.abs(points[:, 1])) > 1.0:
+            reject("Trajectory leaves the 1 m analysis band")
+            continue
+        speed2 = np.sum(first**2, axis=1)
+        if np.any(speed2 < 1e-8):
+            reject("Degenerate curve")
+            continue
+        curvature = np.abs(first[:, 0]*second[:, 1] - first[:, 1]*second[:, 0]) / speed2**1.5
+        worst = float(np.max(curvature))
+        if worst > max_curvature:
+            reject("Excessive curvature", curvature=worst)
+            continue
+        min_d2 = float('inf')
+        for chunk in np.array_split(points, max(1, int(np.ceil(len(points)/128)))):
+            d2 = np.sum((chunk[:, None, :] - obstacles[None, :, :])**2, axis=2)
+            min_d2 = min(min_d2, float(np.min(d2)))
+        measured_clearance = float(np.sqrt(min_d2))
+        if measured_clearance < robot_radius + safety_margin:
+            reject("Too close to measured returns", clearance=measured_clearance, curvature=worst)
+            continue
+        accepted = TrajectoryResult(
+            True, "Sampled heading-tangent curve avoids observed returns (unknown space not checked)"
+            if robot_yaw is not None else "Sampled curve avoids observed returns (unknown space not checked)",
+            path_st, measured_clearance, worst, candidate,
+        )
+        successes.append(accepted)
+        if _evaluated_results is not None:
+            _evaluated_results.append(accepted)
+    if successes:
+        if _accepted_results is not None:
+            _accepted_results.extend(successes)
+        return max(successes, key=lambda r: r.min_observed_clearance - 0.005*r.max_curvature)
+    from collections import Counter
+    failure_counts = Counter(failures)
+    return TrajectoryResult(
+        False, "No valid heading-tangent curve: " + "; ".join(
+            f"{reason}: {count}" for reason, count in failure_counts.items()
+        ), candidate=candidate,
+    )
+
+
+@dataclass(frozen=True)
+class TrajectorySearchResult:
+    feasible: tuple[TrajectoryResult, ...]
+    rejected: tuple[TrajectoryResult, ...]
+
+
+def search_candidate_trajectories(
+    observation: EdgeObservation,
+    robot_position: Point,
+    *,
+    robot_radius: float = 0.089,
+    safety_margin: float = 0.04,
+    max_curvature: float = 5.0,
+    robot_yaw: Optional[float] = None,
+    samples_per_gap: int = 5,
+    max_gap_candidates: int = 40,
+) -> TrajectorySearchResult:
+    """Collect all evaluated curves, including failed variants for debugging.
+
+    This search evaluates observed gaps only. Feasible means sampled geometric
+    checks passed, not that free space or dynamic safety is guaranteed.
+    """
+    if max_gap_candidates < 1:
+        raise ValueError("max_gap_candidates must be positive")
+    options = find_feasible_gap_candidates(
+        observation, robot_radius=robot_radius, safety_margin=safety_margin,
+        samples_per_gap=samples_per_gap,
+    )
+    # Prefer gaps ahead of the robot and closer to the current edge segment.
+    robot_s = float(points_to_edge_frame(
+        np.asarray([robot_position], dtype=float), observation.start, observation.end
+    )[0, 0])
+    options = [o for o in options if robot_s + 0.05 < o.s < observation.length - 0.05]
+    options.sort(key=lambda o: (o.s, -o.width, abs(o.t)))
+    trials: list[TrajectoryResult] = []
+    for option in options[:max_gap_candidates]:
+        evaluate_trajectory(
+            observation, robot_position, option,
+            robot_radius=robot_radius, safety_margin=safety_margin,
+            max_curvature=max_curvature, robot_yaw=robot_yaw,
+            _evaluated_results=trials,
+        )
+    good = sorted((r for r in trials if r.feasible),
+                  key=lambda r: r.min_observed_clearance - 0.005*r.max_curvature,
+                  reverse=True)
+    bad = tuple(r for r in trials if not r.feasible)
+    return TrajectorySearchResult(tuple(good), bad)
+
+
+def find_all_feasible_trajectories(
+    observation: EdgeObservation,
+    robot_position: Point,
+    *,
+    robot_radius: float = 0.089,
+    safety_margin: float = 0.04,
+    max_curvature: float = 5.0,
+    robot_yaw: Optional[float] = None,
+) -> list[TrajectoryResult]:
+    """All accepted sampled curves, including alternate cubic control lengths.
+
+    Sorted best-first by the same heuristic as plan_candidate_trajectory.
+    Intended for debugging: these paths are NOT certified safe in unknown space.
+    """
+    return list(search_candidate_trajectories(
+        observation, robot_position, robot_radius=robot_radius,
+        safety_margin=safety_margin, max_curvature=max_curvature,
+        robot_yaw=robot_yaw, samples_per_gap=3,
+        max_gap_candidates=10000,
+    ).feasible)
 
 
 def plan_candidate_trajectory(
@@ -452,63 +627,24 @@ def plan_candidate_trajectory(
     robot_radius: float = 0.089,
     safety_margin: float = 0.04,
     max_curvature: float = 5.0,
+    robot_yaw: Optional[float] = None,
+    max_heading_error: float = np.deg2rad(30.0),
 ) -> TrajectoryResult:
-    """Find a sampled candidate trajectory through an observed gap."""
+    """Return the same best path used by the debugger search."""
+    from collections import Counter
 
-    options = find_feasible_gap_candidates(
-        observation,
-        robot_radius=robot_radius,
-        safety_margin=safety_margin,
+    search = search_candidate_trajectories(
+        observation, robot_position,
+        robot_radius=robot_radius, safety_margin=safety_margin,
+        max_curvature=max_curvature, robot_yaw=robot_yaw,
     )
-
-    if not options:
-        return TrajectoryResult(
-            False,
-            "No measured internal gap wide enough",
-        )
-
-    valid = []
-    rejected = []
-
-    for option in options:
-        trial = evaluate_trajectory(
-            observation,
-            robot_position,
-            option,
-            robot_radius=robot_radius,
-            safety_margin=safety_margin,
-            max_curvature=max_curvature,
-        )
-
-        if trial.feasible:
-            valid.append(trial)
-        else:
-            rejected.append(trial.reason)
-
-    if not valid:
-        from collections import Counter
-
-        counts = Counter(rejected)
-        details = "; ".join(
-            f"{reason}: {count}"
-            for reason, count in counts.items()
-        )
-
-        return TrajectoryResult(
-            False,
-            (
-                f"No feasible sampled curve among "
-                f"{len(options)} gap targets. "
-                f"Rejections: {details}"
-            ),
-        )
-
-    return max(
-        valid,
-        key=lambda r:
-            r.min_observed_clearance
-            - 0.005 * r.max_curvature,
-    )
+    if search.feasible:
+        return search.feasible[0]
+    if not search.rejected:
+        return TrajectoryResult(False, "No observed gap candidate ahead of the robot")
+    counts = Counter(r.reason for r in search.rejected)
+    breakdown = "; ".join(f"{reason}: {count}" for reason, count in counts.items())
+    return TrajectoryResult(False, f"No feasible sampled curve. Rejections: {breakdown}")
 
 
 def choose_avoidance_target(
@@ -519,6 +655,8 @@ def choose_avoidance_target(
     robot_radius: float = 0.089,
     safety_margin: float = 0.04,
     lookahead_distance: float = 0.30,
+    robot_yaw: Optional[float] = None,
+    max_heading_error: float = np.deg2rad(30.0),
 ) -> TargetResult:
     """Select a world-frame lookahead from a sampled candidate trajectory.
 
@@ -531,7 +669,8 @@ def choose_avoidance_target(
         raise ValueError("lookahead_distance must be positive")
     trial = plan_candidate_trajectory(
         observation, robot_position, robot_radius=robot_radius,
-        safety_margin=safety_margin,
+        safety_margin=safety_margin, robot_yaw=robot_yaw,
+        max_heading_error=max_heading_error,
     )
     if not trial.feasible:
         return TargetResult(None, trial.reason)

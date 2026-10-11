@@ -55,6 +55,56 @@ class TrajectoryTests(unittest.TestCase):
         obs = analyze_edge(np.empty((0, 2)), START, END)
         self.assertFalse(plan_candidate_trajectory(obs, START).feasible)
 
+    def test_heading_aligned_passes(self):
+        obs = analyze_edge(corridor_points(), START, END)
+        result = plan_candidate_trajectory(obs, START, robot_yaw=0.0)
+        self.assertTrue(result.feasible, result.reason)
+
+    def test_heading_opposite_rejected(self):
+        obs = analyze_edge(corridor_points(), START, END)
+        result = plan_candidate_trajectory(obs, START, robot_yaw=np.pi)
+        self.assertFalse(result.feasible)
+        self.assertIn("align first", result.reason)
+
+    def test_heading_rotated_edge(self):
+        # Same east-facing corridor geometry rotated 90 degrees into +Y.
+        points = corridor_points()
+        rotated = np.column_stack((-points[:, 1], points[:, 0]))
+        obs = analyze_edge(rotated, (0., 0.), (0., 1.424))
+        good = plan_candidate_trajectory(obs, (0., 0.), robot_yaw=np.pi/2)
+        bad = plan_candidate_trajectory(obs, (0., 0.), robot_yaw=0.0)
+        self.assertTrue(good.feasible, good.reason)
+        self.assertFalse(bad.feasible)
+
+    def test_curve_tangent_matches_robot_yaw(self):
+        obs = analyze_edge(corridor_points(), START, END)
+        yaw = np.deg2rad(12.0)
+        result = plan_candidate_trajectory(obs, START, robot_yaw=yaw)
+        self.assertTrue(result.feasible, result.reason)
+        path = np.asarray(result.path_st)
+        first_step = path[1] - path[0]
+        actual_yaw = np.arctan2(first_step[1], first_step[0])
+        self.assertAlmostEqual(actual_yaw, yaw, delta=np.deg2rad(1.0))
+
+    def test_heading_tangent_on_rotated_edge(self):
+        points = corridor_points()
+        rotated = np.column_stack((-points[:, 1], points[:, 0]))
+        obs = analyze_edge(rotated, (0., 0.), (0., 1.424))
+        yaw = np.deg2rad(80)
+        result = plan_candidate_trajectory(obs, (0., 0.), robot_yaw=yaw)
+        self.assertTrue(result.feasible, result.reason)
+        path = np.asarray(result.path_st)
+        delta = path[1] - path[0]
+        # +s is +world Y; +t is -world X.
+        world_delta = np.array([-delta[1], delta[0]])
+        actual_yaw = np.arctan2(world_delta[1], world_delta[0])
+        self.assertAlmostEqual(actual_yaw, yaw, delta=np.deg2rad(1.0))
+
+    def test_heading_invalid_rejected(self):
+        obs = analyze_edge(corridor_points(), START, END)
+        with self.assertRaises(ValueError):
+            evaluate_trajectory(obs, START, GapCandidate(0.65, 0, 0.72, 0.65), robot_yaw=float('nan'))
+
 
 if __name__ == '__main__':
     unittest.main()

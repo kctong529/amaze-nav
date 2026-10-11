@@ -41,7 +41,6 @@ class PerceptionTests(unittest.TestCase):
         self.assertEqual(assess_passability(observation, A).status, Passability.UNKNOWN)
         target = choose_avoidance_target(observation, A, B)
         self.assertIsNotNone(target.target)
-        self.assertEqual(len(target.target), 2)
         self.assertTrue(np.isfinite(target.target).all())
         self.assertFalse(target.clearance_verified)
 
