@@ -1,4 +1,4 @@
-"""ROS-independent, observational LiDAR analysis for an individual directed maze edge.
+"""Perception Module v1.0: ROS-independent LiDAR analysis and trajectory planning.
 
 All input coordinates must belong to the same fixed XY frame. Observed gaps are
 NOT verified free corridors and must not be used directly as collision guarantees.
@@ -25,10 +25,12 @@ class Gap:
 
     @property
     def width(self) -> float:
+        """Measured gap width between lateral obstacle-cluster boundaries."""
         return self.right - self.left
 
     @property
     def midpoint(self) -> float:
+        """Lateral midpoint of an observed gap, not necessarily a safe target."""
         return (self.left + self.right) / 2.0
 
 
@@ -49,6 +51,7 @@ class EdgeObservation:
 
     @property
     def length(self) -> float:
+        """Length of the directed graph edge in the fixed XY frame."""
         return float(np.linalg.norm(np.asarray(self.end) - np.asarray(self.start)))
 
 
@@ -152,6 +155,7 @@ def edge_to_world(s: float, t: float, start: Point, end: Point) -> Point:
 
 
 def extract_slice(edge_points: np.ndarray, s0: float, thickness: float) -> np.ndarray:
+    """Return edge-frame points in a longitudinal strip centered at ``s0``."""
     if thickness <= 0 or not np.isfinite([s0, thickness]).all():
         raise ValueError("Slice position and thickness must be finite; thickness must be positive")
     points = np.asarray(edge_points, dtype=float)
@@ -711,11 +715,11 @@ def choose_avoidance_target(
 ) -> TargetResult:
     """Select a world-frame lookahead from a sampled candidate trajectory.
 
-    `nominal_target` must be the observation's edge destination for v0.3.
+    `nominal_target` must match the observation's directed edge endpoint.
     Does not claim `clearance_verified`: occlusion/unknown space is untested.
     """
     if not np.allclose(nominal_target, observation.end, atol=1e-3):
-        return TargetResult(None, "v0.3 only supports the edge endpoint as nominal_target")
+        return TargetResult(None, "nominal_target must match the directed edge endpoint")
     if lookahead_distance <= 0 or not np.isfinite(lookahead_distance):
         raise ValueError("lookahead_distance must be positive")
     trial = plan_candidate_trajectory(
@@ -1547,9 +1551,12 @@ def search_with_fallback(
     max_fallback_pairs: int = 100,
     diagnostics: Optional[dict] = None,
 ) -> tuple[TrajectorySearchResult, str]:
-    """Full-edge single-gap -> short approach -> full-edge two-waypoint.
+    """Search destination-reaching routes first, then local passage maneuvers.
 
-    A successful short approach must not be interpreted as full-edge passability.
+    Returns the first stage with a feasible sampled route and its stage label.
+    Local paths do not certify whole-edge traversability. This function does
+    not issue velocity commands or execute an in-place rotation. The optional
+    diagnostics mapping contains per-stage search results for debugging.
     """
     # Prefer destination-reaching motion independent of opening tracking.
     direct = search_direct_destination(
@@ -1697,7 +1704,7 @@ def search_intermediate_alignment(
     Select a short approach with sufficient clearance at its endpoint, then
     aim at a *subsequent* observed opening. Reject any straight continuation
     that comes too close to LiDAR returns. Unknown space remains unchecked.
-    This is a conservative prototype, not an assertion of edge passability.
+    This proposal checks observed-return clearance; it does not certify edge passability.
     """
     if (not np.isfinite([robot_yaw, robot_radius, safety_margin, max_curvature,
                          min_continuation, continuation_step]).all()
@@ -2148,3 +2155,128 @@ def search_reposition_then_rotate(
                     next_gap=gap,
                 )
     return finish(best)
+
+
+# ---------------------------------------------------------------------------
+# High-level perception interface used by the explorer and future navigator.
+# Keep the individual search_* functions available for unit tests and research,
+# but avoid duplicating fallback ordering in each caller.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class MotionPlan:
+    """A *proposal*, not an executable controller command.
+
+    ``segments_st`` contains distinct robot-center translation polylines in
+    edge-local (s,t) meters. Never join them across a required rotation.
+    ``rotation_st`` is the stop position in the same frame, or None.
+    ``departure_yaw`` is in radians in the fixed world/odom XY frame.
+    ``mode`` describes the selected search strategy (not a ROS state).
+    ``requires_rescan`` means the controller must re-observe before translating
+    after the proposed rotation. No return value certifies unknown free space.
+    """
+    mode: str
+    segments_st: tuple[tuple[Point, ...], ...] = ()
+    rotation_st: Optional[Point] = None
+    departure_yaw: Optional[float] = None
+    requires_rescan: bool = False
+    clearance: Optional[float] = None
+    candidate: Optional[GapCandidate] = None
+
+    @property
+    def requires_rotation(self) -> bool:
+        """Whether a separate stop-and-rotate phase is proposed."""
+        return self.rotation_st is not None
+
+
+@dataclass(frozen=True)
+class PlanningReport:
+    """Unified output: primary search, optional recovery and diagnostics."""
+    plan: Optional[MotionPlan]
+    search: TrajectorySearchResult
+    mode: str
+    diagnostics: dict
+
+
+def plan_motion(
+    observation: EdgeObservation,
+    robot_position: Point,
+    *,
+    robot_yaw: float,
+    robot_radius: float = 0.089,
+    safety_margin: float = 0.03,
+    max_curvature: float = 8.0,
+) -> PlanningReport:
+    """Return one destination-first, clearance-checked motion proposal.
+
+    This is the recommended public orchestration API. It first uses
+    ``search_with_fallback`` (destination, passage, short motion), then tries
+    rotation/reposition primitives only when that search found no forward path.
+    Each fallback retains its own geometric constraints. A rotation and its
+    hypothetical continuation are separate phases and require fresh scanning.
+    Observed-point clearance is not a guarantee of collision-free unknown space.
+    """
+    diagnostics = {}
+    kwargs = dict(robot_yaw=robot_yaw, robot_radius=robot_radius,
+                  safety_margin=safety_margin, max_curvature=max_curvature)
+    search, mode = search_with_fallback(
+        observation, robot_position, diagnostics=diagnostics, **kwargs)
+    if search.feasible:
+        best = search.feasible[0]
+        return PlanningReport(MotionPlan(mode, (best.path_st,),
+                                         clearance=best.min_observed_clearance,
+                                         candidate=best.candidate),
+                              search, mode, diagnostics)
+
+    aligned = diagnostics.get("destination alignment")
+    if aligned is not None:
+        plan = MotionPlan("rotate then destination", (aligned.path_st,),
+                          tuple(map(float, points_to_edge_frame(
+                              np.asarray([robot_position]), observation.start,
+                              observation.end)[0])), aligned.departure_yaw,
+                          True, aligned.clearance)
+        return PlanningReport(plan, search, plan.mode, diagnostics)
+
+    common = dict(robot_yaw=robot_yaw, robot_radius=robot_radius,
+                  safety_margin=safety_margin)
+    rotate = search_rotate_now(observation, robot_position, **common)
+    if rotate is not None:
+        plan = MotionPlan("rotate now", (rotate.continuation_st,),
+                          rotate.alignment_st, rotate.departure_yaw, True,
+                          rotate.clearance, rotate.next_gap)
+        return PlanningReport(plan, search, plan.mode, diagnostics)
+
+    hypothetical = search_rotate_then_approach(
+        observation, robot_position, **kwargs)
+    if hypothetical is not None:
+        plan = MotionPlan("align first", (hypothetical.continuation.path_st,),
+                          hypothetical.alignment_st,
+                          hypothetical.departure_yaw, True,
+                          hypothetical.continuation.min_observed_clearance,
+                          hypothetical.continuation.candidate)
+        diagnostics["alignment headings tested"] = hypothetical.headings_tested
+        diagnostics["alignment headings with paths"] = hypothetical.headings_with_paths
+        return PlanningReport(plan, search, plan.mode, diagnostics)
+
+    intermediate = search_intermediate_alignment(
+        observation, robot_position, **common, max_curvature=max_curvature)
+    if intermediate is not None:
+        plan = MotionPlan("intermediate alignment",
+                          (intermediate.approach.path_st,
+                           intermediate.continuation_st),
+                          intermediate.alignment_st, intermediate.departure_yaw,
+                          True, intermediate.clearance, intermediate.next_gap)
+        return PlanningReport(plan, search, plan.mode, diagnostics)
+
+    reposition_diagnostics = {}
+    reposition = search_reposition_then_rotate(
+        observation, robot_position, diagnostics=reposition_diagnostics, **common)
+    diagnostics["reposition reasons"] = reposition_diagnostics
+    if reposition is not None:
+        plan = MotionPlan("lateral reposition",
+                          (reposition.first_leg_st, reposition.second_leg_st),
+                          reposition.rotation_st, reposition.departure_yaw,
+                          True, reposition.observed_clearance,
+                          reposition.next_gap)
+        return PlanningReport(plan, search, plan.mode, diagnostics)
+    return PlanningReport(None, search, mode, diagnostics)

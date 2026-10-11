@@ -42,3 +42,10 @@ For manual edge exploration, rosbag recording, and ground-truth evidence, see [t
 For controller-only troubleshooting (debug-mode commands, exact teleports, the 18-waypoint loop, and waypoint-arrival pitfalls), see [controller-debug.md](controller-debug.md).
 
 **Stage 2 RViz check:** Draw the original pure-pursuit target, shifted obstacle-aware target, and **predicted short controller arc** in distinct markers. Overlay the effective robot radius (or swept footprint), mark its closest approach to a LiDAR surface, and show known-versus-unknown space where possible. Do **not** interpret a point target or a straight line to it as a validated trajectory. Visual markers are proposed additions, not template publishers.
+
+
+## Standalone LiDAR trajectory explorer (implemented)
+
+`tools/run_lidar_explorer.sh` runs the live OpenCV sensor, fixed-odom, and directed-edge views. It imports the installed/local `perception.py`; it does **not** command `/cmd_vel`. In the edge view, blue denotes the directed edge and robot; orange denotes observed obstacle returns; green marks the selected current-heading translation, brown marks a **separate post-rotation translation**; yellow marks `STOP / ROTATE`, with a heading arrow. Light blue curves are alternative feasible samples; red/purple/grey are selected rejected samples in debug mode. Do not treat joined-looking lines as one drivable curve.
+
+Press `t` to recompute and log the plan; `v` cycles best/feasible/debug views, `+` and `-` adjust candidate count, `m`/`n` change the extra safety margin, `j`/`k` change curvature, `p` logs the profile, and `b` runs conservative edge assessment. The plan label refers to a search **strategy**, not the robot's real-time controller state. See [Perception API](perception-api.md).
