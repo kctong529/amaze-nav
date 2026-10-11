@@ -23,6 +23,11 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
+install(FILES
+  src/perception.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(PROGRAMS
   src/navigator.py
   DESTINATION lib/${PROJECT_NAME}

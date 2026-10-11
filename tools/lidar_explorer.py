@@ -11,13 +11,14 @@ from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformException, TransformListener
 
+from perception import analyze_edge
+
 from perception_geometry import (
     transform_points_2d,
     points_to_edge_frame,
     extract_slice,
     cluster_lateral_points,
     find_gaps,
-    analyze_edge_slices,
 )
 
 GRID_X = [0.712, 2.136, 3.560, 4.984, 6.408]
@@ -548,6 +549,8 @@ class LidarExplorer(Node):
         # Latest observations.
         self.latest_odom = None
         self.latest_world_points = None
+        self.latest_edge_observation = None
+        self.latest_slice_results = []
 
         # The latest scan awaiting its timestamp-matched TF.
         self.pending_scan = None
@@ -679,31 +682,39 @@ class LidarExplorer(Node):
             np.asarray(end) - np.asarray(start)
         ))
 
-        edge_points = points_to_edge_frame(
+        # The reusable perception API now owns edge filtering,
+        # cross-sectional sampling, clustering and gap estimation.
+        observation = analyze_edge(
             self.latest_world_points,
             start,
             end,
-        )
-
-        # Restrict the visualization to points near the edge.
-        near_edge = (
-            (edge_points[:, 0] >= -0.2)
-            & (edge_points[:, 0] <= edge_length + 0.2)
-            & (np.abs(edge_points[:, 1]) <= 1.0)
-        )
-
-        filtered_points = edge_points[near_edge]
-
-        slice_results = analyze_edge_slices(
-            filtered_points,
-            edge_length=edge_length,
-            slice_step=0.10,
+            slice_step=SLICE_STEP,
             slice_thickness=SLICE_THICKNESS,
             cluster_max_gap=CLUSTER_MAX_GAP,
             cluster_min_points=CLUSTER_MIN_POINTS,
+            lateral_range=1.0,
         )
+        self.latest_edge_observation = observation
+        filtered_points = observation.obstacle_points_st
 
-        self.latest_slice_results = slice_results
+        # Keep the legacy format for the existing 'p' key logger.
+        self.latest_slice_results = [
+            {
+                "s": section.s,
+                "point_count": section.point_count,
+                "intervals": section.obstacle_intervals,
+                "gaps": [
+                    {
+                        "left": gap.left,
+                        "right": gap.right,
+                        "width": gap.width,
+                        "midpoint": gap.midpoint,
+                    }
+                    for gap in section.gaps
+                ],
+            }
+            for section in observation.slices
+        ]
 
         # Select points belonging to the current cross-section.
         slice_points = extract_slice(
@@ -812,6 +823,8 @@ class LidarExplorer(Node):
             ) % len(self.edges)
 
             self.slice_s = 0.712
+            self.latest_edge_observation = None
+            self.latest_slice_results = []
             self.log_selected_edge()
 
         elif key == ord(","):
@@ -820,6 +833,8 @@ class LidarExplorer(Node):
             ) % len(self.edges)
 
             self.slice_s = 0.712
+            self.latest_edge_observation = None
+            self.latest_slice_results = []
             self.log_selected_edge()
 
         elif key == ord("p"):
