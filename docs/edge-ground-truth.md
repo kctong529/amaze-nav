@@ -1,6 +1,8 @@
 # Edge Passability Ground-Truth Survey
 
-**Documentation:** [README](../README.md) · [Setup](setup.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Setup](setup.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Perception strategy](perception-strategy.md) · [Perception API](perception-api.md) · [Task ownership](tasks.md) · [Development plan](development.md) · **Ground-truth survey** · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [Offline tests](navigation-offline-tests.md) · [RViz & debugging](debugging.md)
+
+---
 
 **Purpose:** Maintain the team's current classification of **all 40 undirected graph edges** in the obstacle-containing world. The annotation is the team's stated ground-truth reference for evaluating perception, not an obstacle map to embed in the submitted navigator.
 

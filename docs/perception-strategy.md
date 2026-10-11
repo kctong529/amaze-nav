@@ -1,5 +1,9 @@
 # Perception Module v1.1 — planning strategy
 
+**Documentation:** [README](../README.md) · [Setup](setup.md) · [Framework](framework.md) · [Methodology](methodology.md) · **Perception strategy** · [Perception API](perception-api.md) · [Task ownership](tasks.md) · [Development plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [Offline tests](navigation-offline-tests.md) · [RViz & debugging](debugging.md)
+
+---
+
 **Status:** This describes the implemented, standalone perception and trajectory planner (`vmc2_project/src/perception.py`). It is **not yet integrated** with `navigator.py`. Read this first for the **why and how**; see [the API reference](perception-api.md) for function contracts and [debugging](debugging.md) for visual diagnostics.
 
 ## The idea in one paragraph

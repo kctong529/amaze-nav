@@ -1,5 +1,9 @@
 # Perception Module v1.1 — API and navigator integration
 
+**Documentation:** [README](../README.md) · [Setup](setup.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Perception strategy](perception-strategy.md) · **Perception API** · [Task ownership](tasks.md) · [Development plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [Offline tests](navigation-offline-tests.md) · [RViz & debugging](debugging.md)
+
+---
+
 **Status:** Tested in a standalone LiDAR/OpenCV explorer; **not integrated into `navigator.py`**. The source is `vmc2_project/src/perception.py`, which is independent of ROS. `tools/lidar_explorer.py` adapts ROS TF/LaserScan observations into the API. This document describes implemented behavior, not guarantees of physical safety.
 
 **For the algorithm and motivation, start with [the planning strategy](perception-strategy.md).** This document specifies API calls, types and integration requirements.
