@@ -2,7 +2,7 @@
 
 The [`tools/mock_path_runner.py`](../tools/mock_path_runner.py) script validates the TurtleBot3 pure-pursuit controller on predefined paths in Gazebo Classic. It is a **controller debug tool**, not an autonomous navigation mode: it bypasses A*, graph-edge passability, backtracking, and Perception Module v1.0.
 
-**Validation status (11 October 2026):** The straight and 90°-turn paths have been tested successfully at **0.05 m/s**. The runner's default requested speed is **0.20 m/s**; that speed has not yet been verified in these tests.
+**Status (11 October 2026):** Straight and turn tracking succeeded in earlier Gazebo tests. An experimental **0.50 m/s** straight-line policy caused excessive drift and was removed. The current controller and runner cap forward speed at **0.22 m/s**. Repeat the controller-only routes to establish tracking performance with this final configuration.
 
 ## Architecture and scope
 
@@ -46,13 +46,13 @@ python3 ../tools/mock_path_runner.py --path straight --gui
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--path {straight,turn,bonus}` | `straight` | Select a predefined path |
-| `--speed FLOAT` | `0.20` | Requested cruise speed (m/s), in `(0, 0.20]` |
+| `--path {straight,turn,loop,bonus}` | `straight` | Select a predefined path |
+| `--speed FLOAT` | `0.22` | Maximum allowed forward speed (m/s), in `(0, 0.22]`; never selects a higher speed automatically |
 | `--lookahead FLOAT` | `0.25` | Pure-pursuit lookahead (m), in `[0.05, 0.60]` |
 | `--enable-motion` | Disabled | Explicitly permit nonzero `/cmd_vel` |
 | `--gui` | Disabled | Show the OpenCV path, robot pose, and target |
 
-Pure pursuit may reduce speed to respect the angular velocity limit. The runner does not currently limit acceleration or deceleration.
+Pure pursuit may reduce speed to respect the angular velocity limit. The controller reduces speed near waypoints using its approach/braking logic. The runner also has a separate forward-obstacle stopping heuristic; neither establishes a guaranteed braking distance. There is no high-speed straight-hallway mode.
 
 ## Test paths
 
@@ -60,6 +60,7 @@ Pure pursuit may reduce speed to respect the angular velocity limit. The runner 
 |---|---|---|
 | `straight` | `(0.712, 0.0)` → `(2.136, 0.0)` | Eastbound straight-line tracking |
 | `turn` | `(2.136, -4.272)` → `(2.136, -5.696)` → `(3.560, -5.696)` | Southbound travel followed by a 90° left turn |
+| `loop` | See [full-route test](mock-path-loop.md): 18 waypoints, 17 adjacent graph edges | Sequential waypoint arrival, stopping, reorientation, and multi-turn tracking |
 | `bonus` | `(6.408, -4.272)` → `(6.408, -5.696)` | **Diagnostics only**; do not enable motion without obstacle-aware planning |
 
 Verify that the first two routes are unobstructed in the *current* maze before enabling motion.
@@ -86,8 +87,8 @@ After teleportation, inspect `/odom` or the runner's logged pose. Do not enable 
 
 1. **Dry run:** Launch `--path straight --gui`; check pose, target direction, and calculated `v`/`w`. Confirm that no other node is sending `/cmd_vel`.
 2. **Reproduce the validated straight test:** Run with `--path straight --speed 0.05 --enable-motion --gui`. Expect positive forward speed, near-zero turning on the centerline, and a complete stop near the endpoint.
-3. **Test increased speed:** Reset the pose, then repeat with `--speed 0.20`. Compare tracking error, stopping distance, and overshoot; **do not record this as validated until observed**.
-4. **Test the corner:** Reset to the turn start; run `--path turn` at `0.05`, then `0.10`, then `0.20 m/s` only if earlier tests show adequate clearance and tracking. Pure pursuit may cut inside the corner.
+3. **Test the configured cap:** Reset the pose, then repeat with `--speed 0.22`. Compare tracking error, stopping distance, and overshoot; **do not record this as validated until observed**.
+4. **Test the corner:** Reset to the turn start; run `--path turn` at `0.05`, then `0.10`, then `0.22 m/s` only if earlier tests show adequate clearance and tracking. Pure pursuit may cut inside the corner.
 5. **Record observations:** Note target, odometry pose and heading, `v`/`w`, final position error, unexpected stops, and any visible oscillation or corner cutting.
 
 Example motion command (from `~/shared/ros2_ws` after the environment setup above):
@@ -96,7 +97,7 @@ Example motion command (from `~/shared/ros2_ws` after the environment setup abov
 python3 ../tools/mock_path_runner.py --path straight --speed 0.05 --enable-motion --gui
 ```
 
-Repeat with `--path turn` for the turn test. The 1.424 m straight segment takes approximately 28.5 seconds at constant `0.05 m/s`, or 7.1 seconds at `0.20 m/s`, excluding start/stop and steering corrections.
+Repeat with `--path turn` for the turn test. The 1.424 m straight segment takes approximately 28.5 seconds at constant `0.05 m/s`, or 6.5 seconds at `0.22 m/s`, excluding start/stop and steering corrections.
 
 ## Runtime safeguards
 
@@ -106,10 +107,10 @@ The runner checks:
 - Distance to final goal: stops within **0.05 m**.
 - Initial pose: must be within **0.30 m** of the first waypoint.
 - Forward scan coverage: at least three valid rays within **±25°**; positive infinite ranges count as no return.
-- Closest measured forward obstacle: stops when closer than **0.22 m**.
+- Closest measured forward obstacle: uses a **speed-dependent threshold** of `0.22 + 0.35·v + v²/(2·0.65)` metres, where `v` is the last commanded speed (m/s).
 - Heading error: suspends translation and rotates when error exceeds **70°**.
 
-The `0.22 m` threshold is **not a speed-aware stopping-distance guarantee**. It does not protect against side obstacles or corner cutting. For unexpected behavior, stop the runner and halt the robot. The runner sends zero velocity on Ctrl+C, but a separate command timeout remains important for process crashes.
+This speed-dependent threshold is a **heuristic, not a measured stopping-distance guarantee**. It does not protect against side obstacles or corner cutting. For unexpected behavior, stop the runner and halt the robot. The runner sends zero velocity on Ctrl+C, but a separate command timeout remains important for process crashes.
 
 ## Interpretation and next steps
 
@@ -118,5 +119,7 @@ A successful run validates **tracking a fixed reference path**, not obstacle-awa
 - This script never calls `analyze_edge()` or `plan_motion()` from Perception Module v1.0.
 - It follows the hardcoded polyline, which might depart from a collision-free corridor when pure pursuit rounds a corner.
 - It does not handle perception-generated rotation phases, trajectory changes, or global replanning.
+
+The `turtlebot_control(robot_pos, robot_h, target, dt, Ld)` signature remains unchanged. The runner supplies active-edge context through `_controller_segment` and `_controller_waypoint_distance` attributes. No 0.50 m/s policy or adaptive fast-straight gate is present.
 
 For integration, replace the fixed path used by `lookahead_point()` with the **selected translation segment** from Perception Module v1.0. Execute rotation proposals as separate stop-and-rotate phases, then obtain a fresh scan and replan. Maintain independent collision/staleness checks while following any proposal. See [Perception API](perception-api.md) and [Perception strategy](perception-strategy.md) for the planner's responsibilities.

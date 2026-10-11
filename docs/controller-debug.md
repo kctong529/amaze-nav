@@ -2,6 +2,8 @@
 
 **Documentation:** [README](../README.md) · [Setup](setup.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
 
+> **Current controller-only test setup (11 October 2026):** Use [`mock-path-runner.md`](mock-path-runner.md) and [`mock-path-loop.md`](mock-path-loop.md) for the standalone runner. Forward speed is capped at **0.22 m/s** on all segments. The experimental 0.50 m/s adaptive policy was reverted after excessive drift. This guide describes an *alternative* debug switch inside `navigator.py`; do not enable both runners simultaneously.
+
 ## Goal
 
 Test the **pure-pursuit baseline** of `turtlebot_control()` independently of A* route selection, LiDAR passability, corridor-centering PID, and obstacle avoidance. Use the **obstacle-free** Gazebo world. The test injects a known path into `self.full_path` and temporarily bypasses perception. **Do not submit with the test mode enabled.**
@@ -128,7 +130,7 @@ These bypasses are **only for the obstacle-free controller tests**. They are not
 
 ## 3. Implement/configure the controller
 
-`__init__()` still contains `...` placeholders for `self.lookahead_dist`, `self.v_max`, `self.w_max`, and the angular PID gains. Fill these with actual trial parameters before testing. The `...` placeholders are not functional velocity/PID settings.
+For the current controller, confirm that `self.lookahead_dist`, `self.v_max`, `self.w_max`, and any PID gains are configured before testing; never leave `...` placeholders. The current translational speed cap is **0.22 m/s**. Do not restore the abandoned 0.50 m/s fast-straight policy.
 
 Implement `turtlebot_control(robot_pos, robot_h, target, dt, Ld)` so it returns `(v_cmd, w_cmd)` and respects the configured speed limits. The template publishes that pair to `/cmd_vel` at 20 Hz. Keep speeds conservative for the first run.
 

@@ -345,17 +345,18 @@ class GridPathFollowerNode(Node):
         self.goal_tol = 0.05
         self.node_tol = 0.05
         # TODO: YOUR CODE HERE: ~3 lines: set the lookahead distance for pure-pursuit based control, and the maximum allowed linear and angular velocities
-        self.lookahead_dist = 0.25  # m
-        self.v_max = 0.20           # m/s
-        self.w_max = 2.0            # rad/s
-        self.v_average = 0.10       # m/s
-        # TODO: YOUR CODE HERE: ~1-2 lines: set your PID controller/s for linear/angular motion
-        self.pid_angular = PID(
-            kp=1.5,
-            ki=0.0,
-            kd=0.0,
-            i_limit=1.0,
-        )
+        self.lookahead_dist = 0.25  # Initial test value, meters
+        self.v_max = 0.22          # Fixed maximum forward speed (m/s).
+        self.w_max = 2.0           # Maximum angular speed (rad/s).
+        self.v_average = 0.22      # Nominal forward speed, constrained by curvature/braking.
+        self.rotate_heading_tol = math.radians(25.0)
+        self.braking_deceleration = 0.35  # Trial value for waypoint slowdown.
+
+        # Controller context set by FOLLOW; None selects conservative speed.
+        self._controller_segment = None
+        self._controller_waypoint_distance = None
+        # Reserved for future PID-assisted tracking; not used by pure pursuit.
+        self.pid_angular = PID(kp=1.5, ki=0.0, kd=0.0, i_limit=1.0)
 
         # --- Helpers to halt turtlebot ---
         self.dwell_s = 0.5
@@ -618,54 +619,37 @@ class GridPathFollowerNode(Node):
         Returns:
             (v_cmd, w_cmd): linear and angular velocity commands.
         """
-        dx = target[0] - robot_pos[0]
-        dy = target[1] - robot_pos[1]
-
-        # Transform the target from the world frame into the robot frame.
-        cos_h = math.cos(robot_h)
-        sin_h = math.sin(robot_h)
-
-        xl = cos_h * dx + sin_h * dy
-        yl = -sin_h * dx + cos_h * dy
-
+        dx, dy = target[0] - robot_pos[0], target[1] - robot_pos[1]
+        c, si = math.cos(robot_h), math.sin(robot_h)
+        xl, yl = c * dx + si * dy, -si * dx + c * dy
         distance_sq = xl * xl + yl * yl
-
-        # No meaningful target displacement.
         if distance_sq < 1e-8:
             return 0.0, 0.0
 
-        # Pure pursuit assumes a forward target. Rotate first if the
-        # target lies outside the forward-facing half-plane.
-        if xl <= 0.0:
-            heading_error = math.atan2(yl, xl)
-            w_cmd = float(np.clip(
-                2.0 * heading_error,
-                -self.w_max,
-                self.w_max,
-            ))
-            return 0.0, w_cmd
+        heading_error = math.atan2(yl, xl)
+        rotate_threshold = getattr(self, "rotate_heading_tol", math.radians(25.0))
+        if abs(heading_error) > rotate_threshold:
+            return 0.0, float(np.clip(1.5 * heading_error, -self.w_max, self.w_max))
 
-        # Signed curvature of the arc toward the lookahead target.
+        # Keep the course-defined five-argument method interface unchanged.
+        active_segment = getattr(self, "_controller_segment", None)
+        waypoint_distance = getattr(self, "_controller_waypoint_distance", None)
+        waypoint_tolerance = getattr(self, "node_tol", 0.05)
+
+        # Fixed speed cap; never accelerate based on straightness/alignment.
+        speed_cap = min(self.v_max, 0.22)
         curvature = 2.0 * yl / distance_sq
+        angular_speed_cap = self.w_max / abs(curvature) if abs(curvature) > 1e-6 else speed_cap
+        v_cmd = min(self.v_average, speed_cap, angular_speed_cap)
 
-        # Limit forward speed so |curvature * v| <= w_max.
-        if abs(curvature) > 1e-6:
-            curvature_speed_limit = self.w_max / abs(curvature)
-        else:
-            curvature_speed_limit = self.v_max
+        if waypoint_distance is not None:
+            remaining = max(0.0, waypoint_distance - waypoint_tolerance)
+            deceleration = getattr(self, "braking_deceleration", 0.35)
+            v_cmd = min(v_cmd, math.sqrt(2.0 * deceleration * remaining))
+            # Extra conservative near-node speed reduction.
+            v_cmd = min(v_cmd, max(0.02, 0.8 * waypoint_distance))
 
-        v_cmd = min(
-            self.v_average,
-            self.v_max,
-            curvature_speed_limit,
-        )
-
-        w_cmd = float(np.clip(
-            curvature * v_cmd,
-            -self.w_max,
-            self.w_max,
-        ))
-
+        w_cmd = float(np.clip(curvature * v_cmd, -self.w_max, self.w_max))
         return float(v_cmd), w_cmd
 
     # --- Publisher helpers ---
@@ -800,6 +784,8 @@ class GridPathFollowerNode(Node):
             # ~1 line: set a temporary goal as the previous node
             temp_goal = ...
 
+            self._controller_segment = None
+            self._controller_waypoint_distance = None
             back_path = [robot_position, temp_goal]
             target = lookahead_point(back_path, robot_position, self.lookahead_dist)
             v_cmd, w_cmd = self.turtlebot_control(robot_position, robot_heading, target, dt, self.lookahead_dist) # Get linear and angular velocity values from your control block
@@ -822,8 +808,12 @@ class GridPathFollowerNode(Node):
             return
 
         target = self.obstacle_avoided_target(robot_position, seg_dir_yaw) # Get obstacle avoided lookahead target point
-        v_cmd, w_cmd = self.turtlebot_control(robot_position, robot_heading, target, dt, self.lookahead_dist) # Get linear and angular velocity values from your control block
-        self.publish_cmd(v_cmd, w_cmd) # publish the velocities
+        self._controller_segment = (ga, gb)
+        self._controller_waypoint_distance = dist_to_b
+        v_cmd, w_cmd = self.turtlebot_control(
+            robot_position, robot_heading, target, dt, self.lookahead_dist,
+        )
+        self.publish_cmd(v_cmd, w_cmd)
         self.draw_scene(robot=robot_position, target=target)
 
 

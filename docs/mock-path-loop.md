@@ -4,6 +4,8 @@ This is an extension of [`mock-path-runner.md`](mock-path-runner.md), based on S
 
 ## Purpose and status
 
+**Current speed policy:** The controller and mock runner cap all forward motion at **0.22 m/s**. The former 0.50 m/s adaptive straight-hallway experiment was removed after excessive drift. Revalidate tracking with the fixed-speed controller; results from earlier versions are not evidence that the current version meets every acceptance criterion.
+
 The straight and single-turn routes have been exercised successfully in Gazebo. The 18-waypoint `loop` fixture is the next **unvalidated** experiment: confirm that Shaan's pure-pursuit controller can repeatedly arrive at graph nodes, reorient, negotiate corners and stop after a long route in the **obstacle-free** course world.
 
 The word `loop` comes from the existing controller-debug guide; the path is not a closed geometrical loop. The full route contains **18 nodes, 17 adjacent edges** and ends at `(4.984, -5.696)`.
@@ -69,10 +71,10 @@ For the first full-route test, enable motion at a conservative speed:
 python3 ~/shared/tools/mock_path_runner.py --path loop --speed 0.10 --enable-motion --gui
 ```
 
-If that succeeds repeatedly, try 0.20 m/s:
+If that succeeds repeatedly, try the final 0.22 m/s cap:
 
 ```bash
-python3 ~/shared/tools/mock_path_runner.py --path loop --speed 0.20 --enable-motion --gui
+python3 ~/shared/tools/mock_path_runner.py --path loop --speed 0.22 --enable-motion --gui
 ```
 
 The `--speed` value is an upper cruise speed; the runner automatically slows near each intermediate node.
@@ -89,3 +91,13 @@ The `--speed` value is an upper cruise speed; the runner automatically slows nea
 ## Limitations
 
 This is **not obstacle-aware motion**. The front-sector LiDAR stop check (0.22 m) is an emergency safeguard only; it cannot verify clearance around corners, alongside the robot or while rotating. The simulator must be configured for a verified obstacle-free route. The current runner also has no global route recovery if a waypoint is missed. This test checks the controller and waypoint transitions before Perception Module v1.0 is merged.
+
+## Fixed-speed controller contract
+
+`mock_path_runner.py` calls the course-defined `turtlebot_control(robot_pos, robot_h, target, dt, Ld)` without adding parameters. It sets `_controller_segment` and `_controller_waypoint_distance` before the call so the controller can brake near the active waypoint. The cap is **0.22 m/s regardless of straightness**; `--speed` may lower but not raise it. The runner also checks scan/odometry freshness and forward obstacles, but it does **not** implement full obstacle avoidance.
+
+Do not use `--speed 0.50`: the current runner rejects it. For a quick check of the correct CLI limits:
+
+```bash
+python3 ~/shared/tools/mock_path_runner.py --help
+```

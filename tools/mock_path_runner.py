@@ -18,7 +18,7 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 
-from navigator import GridPathFollowerNode, lookahead_point, yaw_from_quat
+from navigator import GridPathFollowerNode, lookahead_point, nearest_point_on_polyline, yaw_from_quat
 
 PATHS = {
     "straight": [(0.712, 0.0), (2.136, 0.0)],
@@ -91,8 +91,16 @@ class MockPathRunner(Node):
                         or (abs(dy-1.424) < 1e-5 and dx < 1e-5)):
                     raise ValueError(f"Non-adjacent loop edge: {a} -> {b}")
         self.enable_motion = enable_motion
-        self.v_max = min(speed, 0.20)
-        self.v_average = speed  # Requested cruise speed; pure pursuit may reduce it for sharp curvature.
+        self.v_max = min(speed, 0.22)  # Fixed speed cap, never above 0.22 m/s.
+        self.v_average = self.v_max
+        # Keep waypoint context for braking and the fixed controller interface.
+        self.node_tol = 0.05
+        self.rotate_heading_tol = math.radians(25.0)
+        self.braking_deceleration = 0.35
+        self._controller_segment = None
+        self._controller_waypoint_distance = None
+        self.last_commanded_speed = 0.0
+        self.deceleration = 0.65  # Assumed m/s^2 for the forward-obstacle stop heuristic.
         self.w_max = 2.0
         self.lookahead = lookahead
         self.goal_tolerance = 0.05
@@ -123,7 +131,8 @@ class MockPathRunner(Node):
             cv2.namedWindow("Mock path runner", cv2.WINDOW_NORMAL)
         self.get_logger().info(
             f"Path={path_name}: {self.path}, motion={'ENABLED' if enable_motion else 'DRY RUN'}, "
-            f"speed={speed:.2f} m/s, lookahead={lookahead:.2f} m"
+            f"speed_cap={self.v_max:.2f} m/s (absolute max 0.22), "
+            f"lookahead={lookahead:.2f} m"
         )
 
     def on_odom(self, msg):
@@ -142,6 +151,7 @@ class MockPathRunner(Node):
         cmd.linear.x = float(v if self.enable_motion else 0.0)
         cmd.angular.z = float(w if self.enable_motion else 0.0)
         self.pub.publish(cmd)
+        self.last_commanded_speed = float(cmd.linear.x)
 
     def draw(self):
         if not self.gui or self.odom_time is None:
@@ -196,8 +206,13 @@ class MockPathRunner(Node):
             clearance = front_clearance(self.scan)
             if clearance is None:
                 reason = "no valid forward scan rays"
-            elif clearance < self.stop_distance:
-                reason = f"front obstacle at {clearance:.2f} m"
+            else:
+                # A conservative speed-dependent stop heuristic; not a braking guarantee.
+                speed = abs(self.last_commanded_speed)
+                stop_threshold = (self.stop_distance + 0.35 * speed
+                                  + speed * speed / (2.0 * self.deceleration))
+                if clearance < stop_threshold:
+                    reason = f"front obstacle at {clearance:.2f} m (< {stop_threshold:.2f} m stop threshold)"
         if reason:
             self.command()
             if now - self.last_log_time >= 1.0:
@@ -212,7 +227,8 @@ class MockPathRunner(Node):
             self.draw()
             return
         self.pause_until = None
-        if path_is_sequential(self.path):
+        sequential = path_is_sequential(self.path)
+        if sequential:
             waypoint = self.path[self.segment_index + 1]
             distance_to_waypoint = math.dist(robot, waypoint)
             # Preserve sequential node arrivals: do not jump to the next segment
@@ -231,30 +247,33 @@ class MockPathRunner(Node):
                     return
             # The current segment endpoint is the target, so the robot reaches
             # each graph node before being allowed to steer into the next edge.
-            # At 0.20 m/s, reduce speed near the node to prevent overshoot.
+            # Node braking is handled by turtlebot_control().
             target = waypoint
         else:
             distance_to_waypoint = math.dist(robot, self.path[-1])
             target = lookahead_point(self.path, robot, self.lookahead)
         self.target = target
-        # Reuse exactly the navigator class method; the runner supplies its parameters.
-        v, w = GridPathFollowerNode.turtlebot_control(self, robot, self.yaw, target, dt, self.lookahead)
-        # Rotate in place when the next waypoint lies substantially off-heading.
-        heading_error = math.atan2(math.sin(math.atan2(target[1]-self.y, target[0]-self.x)-self.yaw),
-                                   math.cos(math.atan2(target[1]-self.y, target[0]-self.x)-self.yaw))
-        if abs(heading_error) > math.radians(25 if path_is_sequential(self.path) else 70):
-            v = 0.0
-            w = max(-self.w_max, min(self.w_max, 1.5*heading_error))
-        if path_is_sequential(self.path):
-            # Proportional approach near the waypoint; never exceed user speed.
-            # When the target is sideways/behind, rotation is handled above.
-            v = min(v, max(0.02, 0.8 * distance_to_waypoint))
+        # Supply current path geometry through node state, preserving the
+        # course-required five-argument turtlebot_control() signature.
+        if sequential:
+            segment_index = self.segment_index
+        else:
+            _, segment_index, _ = nearest_point_on_polyline(self.path, robot)
+        self._controller_segment = (self.path[segment_index], self.path[segment_index + 1])
+        self._controller_waypoint_distance = math.dist(robot, self._controller_segment[1])
+
+        # The controller enforces the fixed speed limit and waypoint braking.
+        # The runner retains ROS-level stop safeguards.
+        v, w = GridPathFollowerNode.turtlebot_control(
+            self, robot, self.yaw, target, dt, self.lookahead
+        )
         self.command(v, w)
         if now - self.last_log_time >= .5:
             self.get_logger().info(
                 f"pose=({self.x:.3f},{self.y:.3f},{math.degrees(self.yaw):.1f}deg) "
                 f"lookahead=({target[0]:.3f},{target[1]:.3f}) "
-                f"v={v:.3f} w={w:.3f} dist_goal={math.dist(robot,self.path[-1]):.3f}"
+                f"v={v:.3f} w={w:.3f} "
+                f"speed_cap={self.v_max:.2f} dist_goal={math.dist(robot,self.path[-1]):.3f}"
             )
             self.last_log_time = now
         self.draw()
@@ -269,14 +288,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--path", choices=PATHS, default="straight")
     parser.add_argument("--enable-motion", action="store_true", help="Opt in to publishing nonzero cmd_vel")
-    parser.add_argument("--speed", type=float, default=0.20,
-                        help="Requested cruise speed in m/s (default: 0.20; use 0.05 for initial tests)")
+    parser.add_argument("--speed", type=float, default=0.22,
+                        help="Maximum forward speed in m/s (default/max: 0.22)")
     parser.add_argument("--lookahead", type=float, default=0.25,
                         help="Pure-pursuit lookahead in meters (default: 0.25)")
     parser.add_argument("--gui", action="store_true", help="Show OpenCV visualization")
     args, ros_args = parser.parse_known_args()
-    if not (0 < args.speed <= 0.2 and 0.05 <= args.lookahead <= 0.6):
-        parser.error("Require 0 < speed <= 0.20, 0.05 <= lookahead <= 0.60")
+    if not (0 < args.speed <= 0.22 and 0.05 <= args.lookahead <= 0.6):
+        parser.error("Require 0 < speed <= 0.22, 0.05 <= lookahead <= 0.60")
     rclpy.init(args=ros_args)
     node = MockPathRunner(args.path, args.enable_motion, args.speed, args.lookahead, args.gui)
     try:
