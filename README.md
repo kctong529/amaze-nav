@@ -1,6 +1,10 @@
 # amaze-nav
 
-**Perception Module v1.0** — standalone LiDAR perception and trajectory planning baseline. This is the component version, **not** a release version for the overall amaze-nav project.
+**Documentation:** **README** · [Setup](docs/setup.md) · [Framework](docs/framework.md) · [Methodology](docs/methodology.md) · [Perception strategy](docs/perception-strategy.md) · [Perception API](docs/perception-api.md) · [Task ownership](docs/tasks.md) · [Development plan](docs/development.md) · [Ground-truth survey](docs/edge-ground-truth.md) · [Controller debug](docs/controller-debug.md) · [Navigator tests](docs/testing.md) · [Offline tests](docs/navigation-offline-tests.md) · [RViz & debugging](docs/debugging.md)
+
+---
+
+**Perception Module v1.1** — standalone LiDAR perception and trajectory planning baseline. This is the component version, **not** a release version for the overall amaze-nav project.
 
 **LiDAR-based perception, obstacle avoidance, and autonomous TurtleBot maze navigation with ROS 2.**
 
@@ -20,16 +24,17 @@ The provided navigator uses `FOLLOW → BACKTRACK → REPLAN → FOLLOW` for blo
 
 ## Documentation
 
-- **[Perception Module v1.0 — planning strategy](docs/perception-strategy.md)** — start here: destination-first decisions, LiDAR gap detection, trajectory rejection, opening fallbacks, recovery, and replanning.
-- [Perception Module v1.0 — API and integration](docs/perception-api.md) — exact functions, motion plans, 14 strategy labels, and controller contract.
+- [Passability detection audit](docs/perception-passability-audit.md) — known false-positive/false-negative risks, integration guidance, and test gaps.
+- [Perception Module v1.1 — planning strategy](docs/perception-strategy.md) — start here: destination-first decisions, LiDAR gap detection, trajectory rejection, opening fallbacks, recovery, and replanning.
+- [Perception Module v1.1 — API and integration](docs/perception-api.md) — exact functions, motion plans, 14 strategy labels, and controller contract.
 - [Environment setup](docs/setup.md) — clone the repository, configure ROS 2 and Gazebo model paths, build, launch, and troubleshoot.
-
 - [Provided framework & function guide](docs/framework.md) — what's already implemented versus TODOs, modes, ROS interfaces.
 - [Perception & navigation methodology](docs/methodology.md) — two-stage passability (cross-sectional gap screening + short-horizon motion clearance), pure pursuit, optional LiDAR centering, and alternatives.
 - [Team responsibilities](docs/tasks.md) — suggested owners, deliverables, definitions of done, interface agreements.
 - [Two-day implementation plan](docs/development.md) — integration sequence, priorities, risks, lightweight collaboration.
 - [Edge passability ground-truth survey](docs/edge-ground-truth.md) — manually investigate all 40 edges and record evidence before evaluating perception.
 - [Controller-only debug tests](docs/controller-debug.md) — reversible `straight`, `turn`, and `loop` mocked paths in the obstacle-free world.
+- [Offline navigation tests](docs/navigation-offline-tests.md) — ROS-free unit and state-machine integration tests (scenarios A–E).
 - [Navigator acceptance tests](docs/testing.md) — repeatable teleport tests, four priority edges, integration checks.
 - [RViz & debugging](docs/debugging.md) — available topics, optional markers, and data to monitor.
 

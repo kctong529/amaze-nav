@@ -1,8 +1,10 @@
 # Teleport-based testing and acceptance
 
-**Documentation:** [README](../README.md) · [Setup](setup.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · [Setup](setup.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Perception strategy](perception-strategy.md) · [Perception API](perception-api.md) · [Task ownership](tasks.md) · [Development plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · **Navigator tests** · [Offline tests](navigation-offline-tests.md) · [RViz & debugging](debugging.md)
 
 ---
+
+**Offline tests first:** For Nhan’s A* / `FOLLOW → BACKTRACK → REPLAN` logic without real perception or controller code, see [offline navigation tests](navigation-offline-tests.md). Its mocked blocked edges are test fixtures only, not Gazebo or LiDAR validation.
 
 **Prerequisite:** Complete [Environment setup](setup.md) first; the repository already contains the extracted models and ROS package.
 

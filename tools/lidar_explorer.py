@@ -1,6 +1,6 @@
 
 #!/usr/bin/env python3
-"""OpenCV/ROS debugging explorer for Perception Module v1.0."""
+"""OpenCV/ROS debugging explorer for Perception Module v1.1."""
 
 from collections import Counter
 
@@ -1162,12 +1162,15 @@ class LidarExplorer(Node):
             if self.latest_edge_observation is None:
                 self.get_logger().info("No edge observation available yet")
             else:
-                # No trusted physical corridor limits have been supplied.
-                # This must NOT be interpreted as a confirmed blockage.
+                # Use the pose corresponding to the transformed scan, not
+                # the edge start: previously passed restrictions are irrelevant.
                 start, end = self.selected_edge
+                if self.latest_sensor_xy is None:
+                    self.get_logger().info("No synchronized robot pose available")
+                    return
                 result = assess_passability(
                     self.latest_edge_observation,
-                    robot_position=start,
+                    robot_position=self.latest_sensor_xy,
                     robot_radius=ROBOT_WIDTH / 2, safety_margin=self.planner_safety_margin,
                 )
                 self.get_logger().info(

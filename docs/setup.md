@@ -1,6 +1,8 @@
 # Environment setup — amaze-nav
 
-**Documentation:** [README](../README.md) · [Setup](setup.md) · [Framework](framework.md) · [Methodology](methodology.md) · [Task ownership](tasks.md) · [Two-day plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [RViz & diagnostics](debugging.md)
+**Documentation:** [README](../README.md) · **Setup** · [Framework](framework.md) · [Methodology](methodology.md) · [Perception strategy](perception-strategy.md) · [Perception API](perception-api.md) · [Task ownership](tasks.md) · [Development plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [Offline tests](navigation-offline-tests.md) · [RViz & debugging](debugging.md)
+
+---
 
 This guide sets up the course-provided TurtleBot maze environment from **files already included in the `amaze-nav` repository**. You do **not** need to download or unzip the course archives again. The commands below are intended for the course's **Ubuntu / ROS 2 Humble environment**, even if you clone the repository on a different host operating system.
 

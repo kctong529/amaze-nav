@@ -1,4 +1,8 @@
-# Perception Module v1.0 — planning strategy
+# Perception Module v1.1 — planning strategy
+
+**Documentation:** [README](../README.md) · [Setup](setup.md) · [Framework](framework.md) · [Methodology](methodology.md) · **Perception strategy** · [Perception API](perception-api.md) · [Task ownership](tasks.md) · [Development plan](development.md) · [Ground-truth survey](edge-ground-truth.md) · [Controller debug](controller-debug.md) · [Navigator tests](testing.md) · [Offline tests](navigation-offline-tests.md) · [RViz & debugging](debugging.md)
+
+---
 
 **Status:** This describes the implemented, standalone perception and trajectory planner (`vmc2_project/src/perception.py`). It is **not yet integrated** with `navigator.py`. Read this first for the **why and how**; see [the API reference](perception-api.md) for function contracts and [debugging](debugging.md) for visual diagnostics.
 
@@ -93,9 +97,10 @@ The three conceptual controller actions are **TRANSLATE**, **ROTATE_IN_PLACE**, 
 
 ## Motion planning versus edge passability
 
-**Do not equate `plan_motion()` and `assess_passability()`.** The planner asks *“Can I propose a locally feasible maneuver toward this edge's destination?”* The passability assessor asks *“Does the current geometry justify labeling the whole edge CLEAR, UNKNOWN, or BLOCKED?”*
+**Do not equate `plan_motion()` and `assess_passability()`.** The planner asks *“Can I propose a locally feasible maneuver toward this edge's destination?”* The passability assessor applies an **observed-opening early-rejection policy** to the remaining part of the directed edge.
 
-- `assess_passability()` is conservative. Without trustworthy physical lateral corridor boundaries, a narrow observed gap alone does not justify `BLOCKED`. Insufficient evidence remains `UNKNOWN`.
+- `assess_passability()` returns `BLOCKED` if **any remaining sampled slice** has at least two detected obstacle clusters and internal gaps, **all of which are narrower than** `2(r+m)`. This uses only detected internal openings, not externally supplied corridor boundaries.
+- This is an **operational classification**, not geometric proof that the whole physical edge is impassable. Possible unobserved openings beyond the outermost clusters are ignored by this policy. With insufficient gap observations or no flagged slice, the result remains `UNKNOWN`; `CLEAR` is never returned.
 - A sampled trajectory that avoids recorded returns does **not** establish `CLEAR` for the entire edge.
 - `plan_motion()` returning `plan=None` does **not** justify changing the graph edge to `BLOCKED`.
 - The actual graph/blocking decision belongs to the navigator integration, based on adequate evidence, not an explorer visualization.
@@ -113,7 +118,7 @@ When investigating a failure, inspect `report.mode`, `report.plan`, stage result
 1. **Visibility is not modeled.** The observation stores obstacle endpoints, not per-beam free-space ray tracing. A trajectory may clear all recorded points but still cross unobserved space. Fresh observations and a separate collision stop are mandatory.
 2. **Curvature is a planner heuristic.** `max_curvature` is not automatically validated against the TurtleBot's wheel limits, speed, or the controller's ability to track the curve.
 3. **Rotation proposals are conditional.** The nominal post-rotation straight/curved path is **hypothetical** until rotation completes and LiDAR has been refreshed.
-4. **Boundary assumptions matter.** The lateral extent of observed returns is not a physical wall; do not infer a blocked edge from a candidate gap narrower than 0.238 m alone.
+4. **Observed-opening policy has false-blockage risk.** A remaining cross-section with only too-narrow detected internal gaps is classified `BLOCKED`, even though unobserved exterior openings might exist. This is an early rejection for the present observation, not proof of a full wall-to-wall barrier. Consider reobservation before removing an A* edge.
 5. **No autonomous integration claim.** Unit tests cover planner geometry and orchestration; verify the destination-first choice, staggered openings, and stop-and-rotate plans in Gazebo before connecting to `navigator.py`.
 
 ## Related documents

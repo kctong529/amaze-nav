@@ -1,4 +1,4 @@
-"""Perception Module v1.0: ROS-independent LiDAR analysis and trajectory planning.
+"""Perception Module v1.1: ROS-independent LiDAR analysis and trajectory planning.
 
 All input coordinates must belong to the same fixed XY frame. Observed gaps are
 NOT verified free corridors and must not be used directly as collision guarantees.
@@ -68,7 +68,7 @@ def detect_bottlenecks(
     observation: EdgeObservation,
     *,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     min_clusters: int = 2,
 ) -> list[BottleneckCandidate]:
     """
@@ -222,120 +222,64 @@ def analyze_edge(points_world: np.ndarray, edge_start: Point, edge_end: Point, *
     )
 
 
-def _has_blocking_point_barrier(
-    observation: EdgeObservation,
-    corridor_bounds: tuple[float, float],
-    clearance_radius: float,
-) -> bool:
-    """Test whether inflated measured obstacle points connect both corridor sides.
-
-    Each measured obstacle point excludes a disk of radius clearance_radius
-    for the robot CENTER. A connected union of these disks spanning the two
-    center-accessible corridor boundaries separates start from end.
-
-    Preconditions: corridor_bounds are trustworthy, fixed, impassable lateral
-    boundaries in the edge frame, spanning this whole edge; points are genuine
-    obstacle returns in the same frame. No inferred boundaries are accepted.
-    """
-    low, high = corridor_bounds
-    center_low = low + clearance_radius
-    center_high = high - clearance_radius
-    if center_low >= center_high:
-        # A corridor narrower than the robot center's required clearance
-        # cannot carry the robot, assuming both supplied walls are real.
-        return True
-
-    pts = observation.obstacle_points_st
-    # Use only disks fully within the longitudinal interior. This avoids
-    # claiming a separator due to obstacles past either end of the edge.
-    interior = pts[
-        (pts[:, 0] >= clearance_radius)
-        & (pts[:, 0] <= observation.length - clearance_radius)
-    ]
-    if len(interior) == 0:
-        return False
-
-    n = len(interior)
-    # Union-find across overlapping inflated point disks and the two walls.
-    left, right = n, n + 1
-    parent = list(range(n + 2))
-
-    def root(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    def join(x, y):
-        parent[root(x)] = root(y)
-
-    radius2 = (2.0 * clearance_radius) ** 2
-    for i, (s, t) in enumerate(interior):
-        if t - clearance_radius <= center_low:
-            join(i, left)
-        if t + clearance_radius >= center_high:
-            join(i, right)
-        for j in range(i):
-            ds = s - interior[j, 0]
-            dt = t - interior[j, 1]
-            if ds * ds + dt * dt <= radius2:
-                join(i, j)
-        if root(left) == root(right):
-            return True
-    return False
-
-
 def assess_passability(
     observation: EdgeObservation,
     robot_position: Point,
     *,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
-    corridor_bounds: Optional[tuple[float, float]] = None,
+    safety_margin: float = 0.03,
 ) -> PassabilityResult:
-    """Early rejection only. Never concludes CLEAR from sparse LiDAR returns.
+    """Reject an edge when a remaining slice has only narrow detected gaps.
 
-    corridor_bounds are trusted *physical* lateral wall coordinates (t_min,
-    t_max), in the edge frame. They must enclose the edge over its full
-    length. Do not substitute min/max observed LiDAR points. Without these
-    bounds, a narrow internal gap is a warning, not a proof of blockage.
+    A slice is eligible only when it has at least two retained obstacle
+    clusters and one or more *internal* gaps. If its widest detected gap is
+    strictly smaller than ``2 * (robot_radius + safety_margin)``, return
+    ``BLOCKED``. Consider slices still overlapping the robot's longitudinal
+    footprint; ignore slices entirely behind it.
+
+    ``BLOCKED`` is an operational early-rejection decision based on observed
+    internal openings, NOT proof that no unobserved or exterior route exists.
+    No result from this function certifies ``CLEAR``; otherwise return
+    ``UNKNOWN``. The navigator must choose whether the evidence justifies
+    permanently removing an edge from the graph.
     """
-    if not np.isfinite([robot_radius, safety_margin]).all() or robot_radius <= 0 or safety_margin < 0:
+    if (not np.isfinite([robot_radius, safety_margin]).all()
+            or robot_radius <= 0 or safety_margin < 0):
         raise ValueError("Invalid robot radius or safety margin")
     robot_position = np.asarray(robot_position, dtype=float)
     if robot_position.shape != (2,) or not np.isfinite(robot_position).all():
         raise ValueError("robot_position must be a finite XY point")
 
-    clearance = robot_radius + safety_margin
-    suspects = detect_bottlenecks(
-        observation, robot_radius=robot_radius, safety_margin=safety_margin
-    )
-    minimum = min((b.widest_gap for b in suspects), default=None)
-
-    if corridor_bounds is not None:
-        bounds = np.asarray(corridor_bounds, dtype=float)
-        if bounds.shape != (2,) or not np.isfinite(bounds).all() or bounds[0] >= bounds[1]:
-            raise ValueError("corridor_bounds must be (t_min, t_max), increasing and finite")
-        if _has_blocking_point_barrier(observation, (float(bounds[0]), float(bounds[1])), clearance):
-            return PassabilityResult(
-                Passability.BLOCKED,
-                "Inflated observed obstacle returns form a continuous barrier "
-                "between supplied trusted corridor boundaries",
-                minimum,
-            )
-
-    if suspects:
+    robot_s = float(points_to_edge_frame(
+        robot_position[None, :], observation.start, observation.end
+    )[0, 0])
+    required_width = 2.0 * (robot_radius + safety_margin)
+    # These are candidate gap widths; missing exterior openings are unknown.
+    relevant = [
+        section for section in observation.slices
+        if section.s >= robot_s - robot_radius
+        and len(section.obstacle_intervals) >= 2
+        and section.gaps
+    ]
+    blocked = [
+        section for section in relevant
+        if max(gap.width for gap in section.gaps) < required_width
+    ]
+    if blocked:
+        first = min(blocked, key=lambda section: section.s)
+        widest = max(gap.width for gap in first.gaps)
         return PassabilityResult(
-            Passability.UNKNOWN,
-            f"{len(suspects)} possible bottleneck slice(s); "
-            "no certified full-corridor barrier",
-            minimum,
+            Passability.BLOCKED,
+            f"All detected internal openings at s={first.s:.2f} m "
+            f"are narrower than {required_width:.3f} m "
+            f"(widest: {widest:.3f} m); observed-gap early rejection only",
+            min(max(gap.width for gap in sec.gaps) for sec in blocked),
         )
     return PassabilityResult(
         Passability.UNKNOWN,
-        "No verified blockage; LiDAR-only analysis cannot establish CLEAR",
+        "No remaining slice has only undersized detected internal openings; "
+        "complete edge clearance not established",
     )
-
 
 
 @dataclass(frozen=True)
@@ -359,7 +303,7 @@ class TrajectoryResult:
 def find_feasible_gap_candidates(
     observation: EdgeObservation, *,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     samples_per_gap: int = 3,
 ) -> list[GapCandidate]:
     """Propose center positions strictly inside observed internal openings.
@@ -441,7 +385,7 @@ def evaluate_trajectory(
     candidate: GapCandidate,
     *,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     sample_spacing: float = 0.025,
     max_curvature: float = 5.0,
     backtrack_budget: float = 0.05,
@@ -610,7 +554,7 @@ def search_candidate_trajectories(
     robot_position: Point,
     *,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     max_curvature: float = 5.0,
     backtrack_budget: float = 0.05,
     max_length_ratio: float = 3.0,
@@ -658,7 +602,7 @@ def find_all_feasible_trajectories(
     robot_position: Point,
     *,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     max_curvature: float = 5.0,
     robot_yaw: Optional[float] = None,
 ) -> list[TrajectoryResult]:
@@ -680,7 +624,7 @@ def plan_candidate_trajectory(
     robot_position: Point,
     *,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     max_curvature: float = 5.0,
     robot_yaw: Optional[float] = None,
     max_heading_error: float = np.deg2rad(30.0),
@@ -708,7 +652,7 @@ def choose_avoidance_target(
     nominal_target: Point,
     *,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     lookahead_distance: float = 0.30,
     robot_yaw: Optional[float] = None,
     max_heading_error: float = np.deg2rad(30.0),
@@ -743,7 +687,7 @@ def search_two_waypoint_trajectories(
     *,
     robot_yaw: Optional[float] = None,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     max_curvature: float = 5.0,
     backtrack_budget: float = 0.05,
     max_length_ratio: float = 3.0,
@@ -869,7 +813,7 @@ def search_approach_trajectories(
     *,
     robot_yaw: Optional[float] = None,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     max_curvature: float = 5.0,
     backtrack_budget: float = 0.05,
     max_length_ratio: float = 3.0,
@@ -992,7 +936,7 @@ def search_traverse_trajectories(
     *,
     robot_yaw: Optional[float] = None,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     max_curvature: float = 8.0,
     backtrack_budget: float = 0.05,
     max_length_ratio: float = 3.0,
@@ -1544,7 +1488,7 @@ def search_with_fallback(
     *,
     robot_yaw: Optional[float] = None,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     max_curvature: float = 5.0,
     backtrack_budget: float = 0.05,
     max_length_ratio: float = 3.0,
@@ -1693,7 +1637,7 @@ def search_intermediate_alignment(
     *,
     robot_yaw: float,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     max_curvature: float = 8.0,
     max_approaches: int = 40,
     min_continuation: float = 0.10,
@@ -1792,7 +1736,7 @@ def search_rotate_now(
     *,
     robot_yaw: float,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     min_forward_progress: float = 0.10,
     max_lookahead: float = 0.70,
     continuation_step: float = 0.015,
@@ -1887,7 +1831,7 @@ def search_rotate_then_approach(
     *,
     robot_yaw: float,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     max_curvature: float = 8.0,
     heading_offsets: tuple[float, ...] = (-0.5, -0.25, 0., 0.25, 0.5),
     max_headings: int = 15,
@@ -1984,7 +1928,7 @@ class OpeningProgressTracker:
     prove that an opening was not traversed.
     """
 
-    def __init__(self, robot_radius=0.089, safety_margin=0.04,
+    def __init__(self, robot_radius=0.089, safety_margin=0.03,
                  passed_tolerance=0.03, entry_window=0.06,
                  matching_tolerance=0.16):
         self.robot_radius = robot_radius
@@ -2065,7 +2009,7 @@ def search_reposition_then_rotate(
     *,
     robot_yaw: float,
     robot_radius: float = 0.089,
-    safety_margin: float = 0.04,
+    safety_margin: float = 0.03,
     min_lateral_shift: float = 0.04,
     max_first_leg: float = 0.22,
     max_second_leg: float = 0.65,
