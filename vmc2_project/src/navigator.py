@@ -345,12 +345,17 @@ class GridPathFollowerNode(Node):
         self.goal_tol = 0.05
         self.node_tol = 0.05
         # TODO: YOUR CODE HERE: ~3 lines: set the lookahead distance for pure-pursuit based control, and the maximum allowed linear and angular velocities
-        self.lookahead_dist = ...
-        self.v_max = 0.2  # Approximate value
-        self.w_max = 2  # Safe value
-        self.v_average = 0.1  # Speed in average use
+        self.lookahead_dist = 0.25  # m
+        self.v_max = 0.20           # m/s
+        self.w_max = 2.0            # rad/s
+        self.v_average = 0.10       # m/s
         # TODO: YOUR CODE HERE: ~1-2 lines: set your PID controller/s for linear/angular motion
-        self.pid_angular  = PID(kp=..., ki=..., kd=..., i_limit=...)
+        self.pid_angular = PID(
+            kp=1.5,
+            ki=0.0,
+            kd=0.0,
+            i_limit=1.0,
+        )
 
         # --- Helpers to halt turtlebot ---
         self.dwell_s = 0.5
@@ -613,14 +618,55 @@ class GridPathFollowerNode(Node):
         Returns:
             (v_cmd, w_cmd): linear and angular velocity commands.
         """
-        xl, yl = np.array([[np.cos(robot_h), np.sin(robot_h)], [-np.sin(robot_h), np.cos(robot_h)]]) @ (np.asarray(target) - np.asarray(robot_pos))  # Coordinate transform
-        L2 = xl ** 2 + yl ** 2  # L^2
-        r = L2/(2*yl)  # Radius
-        gamma = 1.0 / r  # Curvature
-        v_max_now = np.min(np.abs(gamma * self.w_max), self.v_max)  # Maximum linear speed in this scenario
-        v_cmd = np.min(self.v_average, v_max_now)
-        w_cmd = gamma * v_cmd  # Steer command
-        return v_cmd, w_cmd
+        dx = target[0] - robot_pos[0]
+        dy = target[1] - robot_pos[1]
+
+        # Transform the target from the world frame into the robot frame.
+        cos_h = math.cos(robot_h)
+        sin_h = math.sin(robot_h)
+
+        xl = cos_h * dx + sin_h * dy
+        yl = -sin_h * dx + cos_h * dy
+
+        distance_sq = xl * xl + yl * yl
+
+        # No meaningful target displacement.
+        if distance_sq < 1e-8:
+            return 0.0, 0.0
+
+        # Pure pursuit assumes a forward target. Rotate first if the
+        # target lies outside the forward-facing half-plane.
+        if xl <= 0.0:
+            heading_error = math.atan2(yl, xl)
+            w_cmd = float(np.clip(
+                2.0 * heading_error,
+                -self.w_max,
+                self.w_max,
+            ))
+            return 0.0, w_cmd
+
+        # Signed curvature of the arc toward the lookahead target.
+        curvature = 2.0 * yl / distance_sq
+
+        # Limit forward speed so |curvature * v| <= w_max.
+        if abs(curvature) > 1e-6:
+            curvature_speed_limit = self.w_max / abs(curvature)
+        else:
+            curvature_speed_limit = self.v_max
+
+        v_cmd = min(
+            self.v_average,
+            self.v_max,
+            curvature_speed_limit,
+        )
+
+        w_cmd = float(np.clip(
+            curvature * v_cmd,
+            -self.w_max,
+            self.w_max,
+        ))
+
+        return float(v_cmd), w_cmd
 
     # --- Publisher helpers ---
     def publish_cmd(self, v: float, w: float):
