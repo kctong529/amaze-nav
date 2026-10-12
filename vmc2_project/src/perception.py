@@ -1,4 +1,4 @@
-"""Perception Module v1.1: ROS-independent LiDAR analysis and trajectory planning.
+"""Perception Module v1.1 + conservative closed-end detection: ROS-independent LiDAR analysis and trajectory planning.
 
 All input coordinates must belong to the same fixed XY frame. Observed gaps are
 NOT verified free corridors and must not be used directly as collision guarantees.
@@ -222,63 +222,146 @@ def analyze_edge(points_world: np.ndarray, edge_start: Point, edge_end: Point, *
     )
 
 
+def _has_blocking_point_barrier(
+    observation: EdgeObservation,
+    corridor_bounds: tuple[float, float],
+    clearance_radius: float,
+) -> bool:
+    """Test whether inflated measured obstacle points connect both corridor sides.
+
+    Each measured obstacle point excludes a disk of radius clearance_radius
+    for the robot CENTER. A connected union of these disks spanning the two
+    center-accessible corridor boundaries separates start from end.
+
+    Preconditions: corridor_bounds are trustworthy, fixed, impassable lateral
+    boundaries in the edge frame, spanning this whole edge; points are genuine
+    obstacle returns in the same frame. No inferred boundaries are accepted.
+    """
+    low, high = corridor_bounds
+    center_low = low + clearance_radius
+    center_high = high - clearance_radius
+    if center_low >= center_high:
+        # A corridor narrower than the robot center's required clearance
+        # cannot carry the robot, assuming both supplied walls are real.
+        return True
+
+    pts = observation.obstacle_points_st
+    # Use only disks fully within the longitudinal interior. This avoids
+    # claiming a separator due to obstacles past either end of the edge.
+    interior = pts[
+        (pts[:, 0] >= clearance_radius)
+        & (pts[:, 0] <= observation.length - clearance_radius)
+    ]
+    if len(interior) == 0:
+        return False
+
+    n = len(interior)
+    # Union-find across overlapping inflated point disks and the two walls.
+    left, right = n, n + 1
+    parent = list(range(n + 2))
+
+    def root(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def join(x, y):
+        parent[root(x)] = root(y)
+
+    radius2 = (2.0 * clearance_radius) ** 2
+    for i, (s, t) in enumerate(interior):
+        if t - clearance_radius <= center_low:
+            join(i, left)
+        if t + clearance_radius >= center_high:
+            join(i, right)
+        for j in range(i):
+            ds = s - interior[j, 0]
+            dt = t - interior[j, 1]
+            if ds * ds + dt * dt <= radius2:
+                join(i, j)
+        if root(left) == root(right):
+            return True
+    return False
+
+
 def assess_passability(
     observation: EdgeObservation,
     robot_position: Point,
     *,
     robot_radius: float = 0.089,
     safety_margin: float = 0.03,
+    corridor_bounds: Optional[tuple[float, float]] = None,
+    edge_half_width: float = 0.712,
 ) -> PassabilityResult:
-    """Reject an edge when a remaining slice has only narrow detected gaps.
+    """Reject a narrow *internal* opening between obstacles relevant to the edge.
 
-    A slice is eligible only when it has at least two retained obstacle
-    clusters and one or more *internal* gaps. If its widest detected gap is
-    strictly smaller than ``2 * (robot_radius + safety_margin)``, return
-    ``BLOCKED``. Consider slices still overlapping the robot's longitudinal
-    footprint; ignore slices entirely behind it.
+    Rejection criteria are independent:
+      1. Connected inflated LiDAR point barrier across trusted physical walls,
+         if corridor_bounds is supplied.
+      2. ALL internal gaps < robot diameter + margins between TWO or more clusters that
+         overlap the nominal edge's lateral analysis band [-edge_half_width,
+         +edge_half_width]. No centerline-overlap requirement.
 
-    ``BLOCKED`` is an operational early-rejection decision based on observed
-    internal openings, NOT proof that no unobserved or exterior route exists.
-    No result from this function certifies ``CLEAR``; otherwise return
-    ``UNKNOWN``. The navigator must choose whether the evidence justifies
-    permanently removing an edge from the graph.
+    Ignore a cross-section if fewer than two clusters overlap the edge band.
+    The band only selects relevant observations: its limits are NOT assumed
+    to be physical walls, and an external bypass may still exist. As such,
+    BLOCKED from the narrow-gap rule is a deliberately aggressive heuristic.
     """
-    if (not np.isfinite([robot_radius, safety_margin]).all()
-            or robot_radius <= 0 or safety_margin < 0):
-        raise ValueError("Invalid robot radius or safety margin")
+    if (not np.isfinite([robot_radius, safety_margin, edge_half_width]).all()
+            or robot_radius <= 0 or safety_margin < 0 or edge_half_width <= 0):
+        raise ValueError("Invalid robot clearance or edge_half_width")
     robot_position = np.asarray(robot_position, dtype=float)
     if robot_position.shape != (2,) or not np.isfinite(robot_position).all():
         raise ValueError("robot_position must be a finite XY point")
 
+    clearance = robot_radius + safety_margin
     robot_s = float(points_to_edge_frame(
-        robot_position[None, :], observation.start, observation.end
-    )[0, 0])
-    required_width = 2.0 * (robot_radius + safety_margin)
-    # These are candidate gap widths; missing exterior openings are unknown.
-    relevant = [
-        section for section in observation.slices
-        if section.s >= robot_s - robot_radius
-        and len(section.obstacle_intervals) >= 2
-        and section.gaps
-    ]
-    blocked = [
-        section for section in relevant
-        if max(gap.width for gap in section.gaps) < required_width
-    ]
-    if blocked:
-        first = min(blocked, key=lambda section: section.s)
-        widest = max(gap.width for gap in first.gaps)
+        robot_position[None, :], observation.start, observation.end)[0, 0])
+
+    if corridor_bounds is not None:
+        bounds = np.asarray(corridor_bounds, dtype=float)
+        if bounds.shape != (2,) or not np.isfinite(bounds).all() or bounds[0] >= bounds[1]:
+            raise ValueError("corridor_bounds must be (t_min, t_max), increasing and finite")
+        if _has_blocking_point_barrier(
+                observation, (float(bounds[0]), float(bounds[1])), clearance):
+            return PassabilityResult(
+                Passability.BLOCKED,
+                "Confirmed inflated-point barrier between trusted corridor walls",
+            )
+
+    # Use the WIDEST opening in each relevant cross-section. A narrow
+    # peripheral gap cannot reject an edge when another opening is wide enough.
+    restrictive_slices = []
+    for section in observation.slices:
+        if section.s < robot_s - robot_radius:
+            continue
+        relevant = sorted((max(left, -edge_half_width), min(right, edge_half_width))
+                          for left, right in section.obstacle_intervals
+                          if right >= -edge_half_width and left <= edge_half_width)
+        if len(relevant) < 2:
+            continue
+        widths = [next_left - prev_right
+                  for (_, prev_right), (next_left, _) in zip(relevant, relevant[1:])
+                  if next_left > prev_right]
+        if widths and max(widths) < 2.0 * clearance:
+            restrictive_slices.append((section.s, max(widths), tuple(widths)))
+
+    if restrictive_slices:
+        s, widest, widths = min(restrictive_slices, key=lambda item: item[0])
         return PassabilityResult(
             Passability.BLOCKED,
-            f"All detected internal openings at s={first.s:.2f} m "
-            f"are narrower than {required_width:.3f} m "
-            f"(widest: {widest:.3f} m); observed-gap early rejection only",
-            min(max(gap.width for gap in sec.gaps) for sec in blocked),
+            f"All observed internal openings are narrow at s={s:.2f} m "
+            f"(widest={widest:.3f} m, required={2.0 * clearance:.3f} m, "
+            f"widths={widths}, edge_half_width={edge_half_width:.3f} m); "
+            "heuristic only, exterior bypass unverified",
+            min(x[1] for x in restrictive_slices),
         )
+
     return PassabilityResult(
         Passability.UNKNOWN,
-        "No remaining slice has only undersized detected internal openings; "
-        "complete edge clearance not established",
+        "No trusted-wall barrier or slice with all internal openings undersized between "
+        "clusters intersecting the edge analysis band; visibility unverified",
     )
 
 
@@ -2142,6 +2225,103 @@ class PlanningReport:
     diagnostics: dict
 
 
+def plan_narrow_entry_reposition(
+    observation: EdgeObservation,
+    robot_position: Point,
+    *,
+    robot_yaw: float,
+    robot_radius: float = 0.089,
+    safety_margin: float = 0.03,
+    max_curvature: float = 8.0,
+    max_width: float = 0.35,
+    lateral_tolerance: float = 0.015,
+) -> Optional[MotionPlan]:
+    """Plan a checked curved approach to a narrow passage's CENTER AXIS.
+
+    Stage 1: forward-only cubic to a rotation station outside the entrance.
+    Stage 2: rotate to the edge direction, then RESCAN (no presumed continuation).
+    Do not force a translation when the robot is already too close to reposition.
+    This validates observed points only; navigator performs its live swept guard.
+    """
+    passage = select_next_local_passage(
+        observation, robot_position, robot_radius=robot_radius,
+        safety_margin=safety_margin)
+    if passage is None or len(passage.slice_positions) < 3:
+        return None
+    required = robot_radius + safety_margin
+    width = passage.usable_right - passage.usable_left + 2.0 * required
+    if width > max_width:
+        return None
+    start = points_to_edge_frame(
+        np.asarray([robot_position], dtype=float), observation.start,
+        observation.end)[0]
+    offset = passage.target_t - float(start[1])
+    if abs(offset) <= lateral_tolerance:
+        return None
+    # Position the whole robot before the opening, not within the throat.
+    station_s = passage.s_start - required - 0.04
+    distance_to_station = station_s - float(start[0])
+    if not 0.15 <= distance_to_station <= 0.75:
+        return None
+    goal = np.array([station_s, passage.target_t], dtype=float)
+    edge_yaw = float(np.arctan2(
+        observation.end[1] - observation.start[1],
+        observation.end[0] - observation.start[0]))
+    relative_yaw = float(np.arctan2(
+        np.sin(robot_yaw - edge_yaw), np.cos(robot_yaw - edge_yaw)))
+    initial_direction = np.array([np.cos(relative_yaw), np.sin(relative_yaw)])
+    if initial_direction[0] <= 0.25:
+        return None
+    obstacles = observation.obstacle_points_st
+    if len(obstacles) == 0:
+        return None
+    # A sampled cubic both shifts laterally and approaches the desired axis.
+    # Its arrival tangent is edge-aligned; final heading is still checked
+    # via an explicit stationary rotation and a new LiDAR scan.
+    distance = float(np.linalg.norm(goal - start))
+    ts = np.linspace(0., 1., max(30, int(np.ceil(distance / 0.015))) + 1)
+    omt = 1.0 - ts
+    best = None
+    for in_handle in (0.20, 0.35, 0.50):
+        for out_handle in (0.20, 0.35, 0.50):
+            p0 = start
+            p1 = start + distance * in_handle * initial_direction
+            p2 = goal - distance * out_handle * np.array([1.0, 0.0])
+            p3 = goal
+            path = ((omt**3)[:, None] * p0 +
+                    (3 * omt**2 * ts)[:, None] * p1 +
+                    (3 * omt * ts**2)[:, None] * p2 +
+                    (ts**3)[:, None] * p3)
+            if np.min(np.diff(path[:, 0])) < -1e-5:
+                continue
+            first = (3 * omt**2)[:, None] * (p1-p0) + (6 * omt * ts)[:, None] * (p2-p1) + (3 * ts**2)[:, None] * (p3-p2)
+            second = (6 * omt)[:, None] * (p2-2*p1+p0) + (6 * ts)[:, None] * (p3-2*p2+p1)
+            speed2 = np.sum(first*first, axis=1)
+            if np.any(speed2 < 1e-8):
+                continue
+            curvature = np.abs(first[:, 0]*second[:, 1] - first[:, 1]*second[:, 0]) / speed2**1.5
+            if float(np.max(curvature)) > max_curvature:
+                continue
+            nearest2 = np.min(np.sum(
+                (path[:, None, :] - obstacles[None, :, :])**2, axis=2))
+            clearance = float(np.sqrt(nearest2))
+            if clearance < required:
+                continue
+            if best is None or clearance > best[0]:
+                best = (clearance, path)
+    if best is None:
+        return None
+    clearance, path = best
+    return MotionPlan(
+        mode="center then align narrow entry",
+        segments_st=(tuple((float(s), float(t)) for s, t in path),),
+        rotation_st=(float(goal[0]), float(goal[1])),
+        departure_yaw=edge_yaw,
+        requires_rescan=True,
+        clearance=clearance,
+    )
+
+
 def plan_motion(
     observation: EdgeObservation,
     robot_position: Point,
@@ -2161,6 +2341,16 @@ def plan_motion(
     Observed-point clearance is not a guarantee of collision-free unknown space.
     """
     diagnostics = {}
+    # Give a narrow, laterally offset entrance a dedicated CENTER-FIRST
+    # maneuver before trying destination-first search. Failure to find a
+    # validated reposition path leaves the original planner unchanged.
+    entry = plan_narrow_entry_reposition(
+        observation, robot_position, robot_yaw=robot_yaw,
+        robot_radius=robot_radius, safety_margin=safety_margin,
+        max_curvature=max_curvature)
+    if entry is not None:
+        return PlanningReport(entry, TrajectorySearchResult((), ()),
+                              entry.mode, {"narrow entry": "center first"})
     kwargs = dict(robot_yaw=robot_yaw, robot_radius=robot_radius,
                   safety_margin=safety_margin, max_curvature=max_curvature)
     search, mode = search_with_fallback(
