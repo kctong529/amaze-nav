@@ -12,6 +12,14 @@
 
 **Ground-truth reference:** [Annotated 40-edge map and table](edge-ground-truth.md#current-annotated-ground-truth). Green = constrained passable, red = blocked, unmarked = unobstructed passable. Include all three classes when evaluating false-blocked decisions and traversal success.
 
+## Latest integration checkpoint (12 October 2026)
+
+The first integrated perception/planning/control baseline has been exercised in Gazebo. **Reported result: three checkpoints reached in approximately 2 minutes 30 seconds.** This is an observed *partial run*, not evidence that the full maze was completed within the assignment's 2:30 target. The checkpoint IDs, timing clock, world seed/configuration, and run video/log are not included in this documentation snapshot.
+
+For the next comparable test, record start/finish times, which checkpoints were reached, whether BACKTRACK/REPLAN occurred, wall contacts or safety holds, and whether PID narrow-passage centering or center-first entrance repositioning activated. Perform at least three clean-start repetitions and report each duration rather than assuming this first observed time is repeatable.
+
+The integrated navigator uses pure pursuit for translation, PID-assisted turns/conditional narrow-passage centering, asynchronous `plan_motion()` results, live LiDAR guards, and forward-driving return plans (no reverse-driving recovery). The new center-first entrance maneuver should be treated as experimental until repeatable tight-gap entry is demonstrated.
+
 ## Controller-only testing (before integration)
 
 For Shaan’s independent control work, use [controller-debug.md](controller-debug.md) instead of these obstacle-world acceptance tests. It defines the `AMAZE_NAV_CONTROLLER_TEST` switch, exact teleport poses, and mocked `straight`, `turn`, and `loop` paths. The 18-waypoint `loop` explicitly preserves all intermediate graph nodes and validates every consecutive edge with `GridGraph.has_edge()`. Perception bypasses are **test-only** and should not be used for the obstacle-containing world. Disable the proposed LiDAR centering correction for these isolated pure-pursuit runs (`λ_confidence = 0`); evaluate centering separately after integration.

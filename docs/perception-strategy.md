@@ -119,11 +119,11 @@ When investigating a failure, inspect `report.mode`, `report.plan`, stage result
 2. **Curvature is a planner heuristic.** `max_curvature` is not automatically validated against the TurtleBot's wheel limits, speed, or the controller's ability to track the curve.
 3. **Rotation proposals are conditional.** The nominal post-rotation straight/curved path is **hypothetical** until rotation completes and LiDAR has been refreshed.
 4. **Observed-opening policy has false-blockage risk.** A remaining cross-section with only too-narrow detected internal gaps is classified `BLOCKED`, even though unobserved exterior openings might exist. This is an early rejection for the present observation, not proof of a full wall-to-wall barrier. Consider reobservation before removing an A* edge.
-5. **No autonomous integration claim.** Unit tests cover planner geometry and orchestration; verify the destination-first choice, staggered openings, and stop-and-rotate plans in Gazebo before connecting to `navigator.py`.
+5. **Integration now exists; validation remains limited.** Planner and controller are connected in `navigator.py`, and a Gazebo setup reportedly reached three checkpoints in roughly 2:30. This does not establish full-track success or repeatability. Verify narrow-entry positioning and turning against live LiDAR, including cases where the planner returns no feasible motion.
 
 ## Related documents
 
 - [API and integration contract](perception-api.md): exact exposed functions, outputs, frames and control responsibilities.
 - [Explorer debugging](debugging.md): keyboard commands and visual interpretation.
 - [Methodology and historical alternatives](methodology.md): earlier conceptual approaches; **not** the authoritative description of current planning priority.
-- [Navigator acceptance tests](testing.md): integration tests once controller execution is connected.
+- [Navigator acceptance tests](testing.md): integration and acceptance tests for the current connected navigator.

@@ -17,10 +17,10 @@ The TurtleBot must navigate a **5 × 5 graph maze** without collisions. Node pos
 | Component | Role |
 |---|---|
 | **Perception** | Interpret `/scan` to assess clearance and passage traversability |
-| **Avoidance & control** | Select an obstacle-aware lookahead target and command `/cmd_vel` using pure pursuit; optionally add LiDAR corridor-centering PID |
+| **Avoidance & control** | Execute validated local trajectories using pure pursuit, PID-assisted turning, and narrow-passage centering |
 | **A\* planning** | Follow the grid and replan when an edge is blocked |
 
-The provided navigator uses `FOLLOW → BACKTRACK → REPLAN → FOLLOW` for blocked passages and `DONE` on arrival. **Status:** Standalone LiDAR explorer and ROS-independent perception/trajectory planner implemented and unit-tested; integration with `navigator.py`, controller execution, and autonomous maze navigation remains unfinished.
+The provided navigator uses `FOLLOW → BACKTRACK → REPLAN → FOLLOW` for blocked passages and `DONE` on arrival. **Status (12 October 2026):** Perception, local motion planning, and ROS 2 navigation/control are integrated in an executable Gazebo baseline. One observed setup reached **three checkpoints in approximately 2 min 30 s**. This is a partial-run observation, not a full-track completion time or evidence of repeatable collision-free operation.
 
 ## Documentation
 
@@ -53,9 +53,16 @@ ros2 launch vmc2_project project.launch.py
 
 Use the [ground-truth survey](docs/edge-ground-truth.md) for teleoperation or [navigator tests](docs/testing.md) for repeatable acceptance tests. Use the obstacle-free model for initial controller tests; consult the launch file for how that world is selected.
 
+## Integration progress (12 October 2026)
+
+- **Implemented:** Fresh LiDAR observations, gap/passability analysis, local motion plans, pure-pursuit tracking, PID-assisted rotation and selective narrow-passage centering, in-place turning, forward-only return to the previous node, and A* rerouting after a confirmed blockage.
+- **Narrow entrance handling:** The current experimental planner can propose a short, observed-return-checked repositioning approach toward the opening center axis, followed by heading alignment, a new scan, and entry planning. This is not a sideways translation and must not bypass clearance guards.
+- **Observed progress:** The integrated setup achieved **3 checkpoints in roughly 2 minutes 30 seconds** in Gazebo. The precise checkpoint identities, simulation-versus-wall-clock timing basis, and run conditions were not provided; record these in future runs for reproducibility.
+- **Still to validate:** Full-track completion, runtime consistency across fresh worlds, correct blocked-edge decisions, and clearance at the narrowest passages.
+
 ## Targets
 
-Navigate without hitting walls, aim for the **2 min 30 s simulation-time** full-run target, and achieve repeatable performance. Submit the course package and video evidence as specified in the assignment; see [the test guide](docs/testing.md).
+Navigate without hitting walls, aim for the **2 min 30 s simulation-time** full-run target (distinct from the observed three-checkpoint run of roughly the same duration), and achieve repeatable performance. Submit the course package and video evidence as specified in the assignment; see [the test guide](docs/testing.md).
 
 ## Team
 

@@ -12,6 +12,8 @@ Divide the implementation into three reasonably independent workstreams while ke
 
 The division below is based on **interfaces and dependencies**, rather than assigning one person to each of the three course keywords regardless of workload.
 
+**Status note (12 October 2026):** This checklist captures the original division of work; unchecked boxes are not a reliable snapshot of current completion. The subsystems have now been integrated, with an observed three-checkpoint Gazebo run of roughly 2:30. Full-run validation is outstanding.
+
 ## Proposed Ownership
 
 | Proposed lead | Workstream | Primary responsibility | Key functions / code |

@@ -77,7 +77,7 @@ An edge-local grid tracks **occupied**, **observed free**, and **unknown** cells
 
 ## Proposed baseline: path tracking with LiDAR corridor centering
 
-**Design proposal, not implemented behavior.** When the nominal path is unobstructed, use pure pursuit as the primary controller and a *confidence-weighted lateral centering correction* from LiDAR. This can still help when an obstacle is off to the side: the robot should not abandon the planned graph edge just because a side return is close.
+**Historical design rationale; an optional centering-PID implementation is now integrated.** When the nominal path is unobstructed, use pure pursuit as the primary controller and a *confidence-weighted lateral centering correction* from LiDAR. This can still help when an obstacle is off to the side: the robot should not abandon the planned graph edge just because a side return is close.
 
 Given reliable, approximately perpendicular left/right corridor clearances `d_L` and `d_R` measured in an **edge-aligned frame**, define:
 

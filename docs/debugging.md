@@ -6,6 +6,8 @@
 
 Start with [Environment setup](setup.md) to confirm that Gazebo finds the included models and `/scan` and `/odom` are publishing.
 
+**Integration note (12 October 2026):** The ROS 2 navigator is now integrated. A setup reached three checkpoints in approximately 2:30, but this is not a full-track timing. When diagnosing narrow passage entry, record the observed opening midpoint/usable interval, current edge-frame lateral offset, heading error, selected maneuver stage (`APPROACH`, `ROTATE`, `RESCAN`), and collision-guard decision.
+
 ## What to Monitor in RViz (and Other Debug Views)
 
 For the proposed LiDAR centering controller, log or visualize: left and right **segment-perpendicular** clearance, signed lateral centering error, confidence/validity, `ω_PP`, weighted `ω_c`, combined `/cmd_vel` angular command, and whether centering is suppressed near a node/turn. These are **proposed diagnostics** and require new publishers/logs; RViz does not show these values automatically. Use `rqt_plot` for numeric time series if published.

@@ -6,6 +6,12 @@
 
 Before splitting implementation work, all teammates should complete [Environment setup](setup.md) using the models and `vmc2_project` package in the repository.
 
+## Implementation status update — 12 October 2026
+
+The original two-day breakdown below is preserved as a **planning record**. An initial end-to-end ROS 2 navigator now integrates LiDAR perception, local motion planning, pure-pursuit translation, PID-assisted alignment/narrow-passage centering, forward-only BACKTRACK, and A* replanning. One reported Gazebo run reached **three checkpoints in about 2:30**. Full-track acceptance and repeatable performance are still pending.
+
+Current stabilization priorities are reliable narrow-entrance center-first positioning, clearance-safe rotation, robust replanning on genuinely blocked edges, and collecting repeatable timed full-track evidence. Do not interpret the three-checkpoint observation as a completed full-track run.
+
 ## Suggested Implementation Order
 
 | Phase | Primary lead | Supporting work | Shared checkpoint |

@@ -117,4 +117,4 @@ PYTHONPATH="/usr/lib/python3/dist-packages:$PWD/vmc2_project/src:$PWD/tools${PYT
   python3 -m unittest discover -s vmc2_project/test -p 'test_*.py' -v
 ```
 
-The refactor is validated by unit tests and Python compilation. **Gazebo behavior after this refactor is not yet verified.**
+The refactor is validated by unit tests and Python compilation. **An integrated Gazebo run has been reported (three checkpoints in approximately 2:30), but the result is not a full acceptance test.**
