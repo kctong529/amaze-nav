@@ -16,7 +16,7 @@
 
 ## Run
 
-From the repository root (`ros2_ws/src`, if the package is located there):
+From the repository root (`$HOME/shared/amaze-nav`; run `cd "$HOME/shared/amaze-nav"` first):
 
 ```bash
 python3 -m unittest discover -s vmc2_project/test -p 'test_navigation*.py' -v

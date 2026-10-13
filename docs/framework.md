@@ -65,6 +65,9 @@ control_step()
 
 ## ROS interfaces and visualization
 
+To run the complete node (rather than just the Gazebo world), launch `navigator.py` separately; for a read-only trajectory viewer use LiDAR Explorer. See [setup instructions](setup.md#7-run-the-autonomous-navigator).
+
+
 - `/scan`: `sensor_msgs/LaserScan`, subscribed.
 - `/odom`: `nav_msgs/Odometry`, subscribed.
 - `/cmd_vel`: `geometry_msgs/Twist`, published.

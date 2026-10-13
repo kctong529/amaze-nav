@@ -2,9 +2,9 @@
 set -e
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SHARED_DIR="$(dirname "$SCRIPT_DIR")"
-
-PERCEPTION_DIR="$SHARED_DIR/ros2_ws/src/vmc2_project/src"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+ROS_WS="$(dirname "$REPO_ROOT")/ros2_ws"
+PERCEPTION_DIR="$ROS_WS/src/vmc2_project/src"
 
 if [[ ! -f "$PERCEPTION_DIR/perception.py" ]]; then
     echo "Error: perception.py not found at $PERCEPTION_DIR" >&2

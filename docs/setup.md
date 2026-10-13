@@ -22,7 +22,7 @@ amaze-nav/
 Open an Ubuntu terminal **inside the repository root**:
 
 ```bash
-cd /path/to/amaze-nav   # substitute your own cloned repository location
+cd "$HOME/shared/amaze-nav"  # repository root; assumed current directory below
 export REPO_ROOT="$(pwd -P)"
 source /opt/ros/humble/setup.bash
 export TURTLEBOT3_MODEL=burger
@@ -35,41 +35,35 @@ Do not run `colcon` or Gazebo Classic natively on a Mac just because the reposit
 
 ## 2. Choose a ROS 2 workspace and Gazebo model directory
 
-These paths are configurable and **must not assume anyone's username**.
+The following is the expected directory layout for this repository. All paths are relative to `$HOME`, not a hard-coded username:
 
 ```bash
-# Pick a workspace; the course environment often uses $HOME/shared/ros2_ws.
+export REPO_ROOT="$HOME/shared/amaze-nav"   # assumed current working directory
 export ROS_WS="$HOME/shared/ros2_ws"
-
-# Gazebo's conventional per-user model directory:
 export MAZE_MODELS="$HOME/.gazebo/models"
-
-# If your course environment instead uses a shared model directory,
-# change only this variable, for example:
-# export MAZE_MODELS="$HOME/shared/.gazebo/models"
 
 mkdir -p "$ROS_WS/src" "$MAZE_MODELS"
 ```
 
-If you're already using a different ROS workspace, set `ROS_WS` to that directory. Check where your existing course models live before choosing `MAZE_MODELS`.
+The paths are **siblings**, not nested: `amaze-nav` is the Git checkout, `ros2_ws` is the ROS workspace, and `.gazebo/models` is the per-user Gazebo model directory. Commands involving `tools/` and `vmc2_project/` assume the current directory is `$REPO_ROOT`, unless a `cd` is shown explicitly.
 
 ## 3. Install the included package and models
 
-Copy the repository's existing directories into the appropriate ROS/Gazebo locations:
+Install the ROS package and the maze models from the existing repository:
 
 ```bash
-# Install/update the ROS package source in the workspace.
-# Do not copy onto itself if the repository already lives at that path.
-if [ "$REPO_ROOT/vmc2_project" != "$ROS_WS/src/vmc2_project" ]; then
-  cp -a "$REPO_ROOT/vmc2_project" "$ROS_WS/src/"
+# Link the tracked package into the separate ROS workspace so edits in the
+# repository are reflected in the workspace without repeated copying.
+if [ ! -e "$ROS_WS/src/vmc2_project" ]; then
+  ln -s "$REPO_ROOT/vmc2_project" "$ROS_WS/src/vmc2_project"
 fi
 
-# Install both maze models. Remove old copies *only if you intend to replace them*.
+# Install model folders in Gazebo's conventional user directory.
 cp -a "$REPO_ROOT/project_track" "$MAZE_MODELS/"
 cp -a "$REPO_ROOT/project_track_no_obs" "$MAZE_MODELS/"
 ```
 
-**Development note:** If your clone is outside `ROS_WS/src`, this copy is a separate working tree. Edits made to the original repository will not automatically appear in the workspace copy (or vice versa). For active development, it is often better to **clone the repository directly under `$ROS_WS/src/`**, or explicitly link the package from there using a symbolic link supported by your environment. If cloning the repository under `$ROS_WS/src/amaze-nav`, the package is nested one directory below `src`; `colcon` can discover packages recursively when run from the workspace root.
+If `$ROS_WS/src/vmc2_project` already exists, check whether it is a symlink to `$REPO_ROOT/vmc2_project` or a separate copy before proceeding. Do not silently overwrite it: a separate copy can become stale relative to the Git checkout. The symlink is optional if you already have a correctly configured source package in the workspace.
 
 Check the model locations (the names must correspond to the model URI names expected by the launch/world files):
 
@@ -83,7 +77,7 @@ You should find each model's `model.config` and `model.sdf` inside its own folde
 
 ## 4. Add the maze models to Gazebo's search path
 
-The **parent directory** of the two model folders must be visible to Gazebo. This was important in the course container where the models were stored under `$HOME/shared/.gazebo/models` but that directory was not included in `GAZEBO_MODEL_PATH`.
+The **parent directory** of the two model folders, `$HOME/.gazebo/models`, must be visible to Gazebo via `GAZEBO_MODEL_PATH`.
 
 ```bash
 case ":${GAZEBO_MODEL_PATH:-}:" in
@@ -123,7 +117,85 @@ The provided launch file supports the maze environment; check `project.launch.py
 
 For manual exploration, make sure the unfinished autonomous navigator is not simultaneously publishing `/cmd_vel` commands.
 
-## 7. Verify sensors and visualize in RViz
+## 7. Run the autonomous navigator
+
+Run this in a **second Ubuntu terminal**, after Gazebo has started. Source the ROS 2 environment and the built workspace in this terminal too:
+
+```bash
+source /opt/ros/humble/setup.bash
+export ROS_WS="$HOME/shared/ros2_ws"
+source "$ROS_WS/install/setup.bash"
+export TURTLEBOT3_MODEL=burger
+
+PYTHONPATH="/usr/lib/python3/dist-packages${PYTHONPATH:+:$PYTHONPATH}" \
+  ros2 run vmc2_project navigator.py
+```
+
+The explicit `PYTHONPATH` is the workaround used in the course container; omit it if the normal ROS environment already imports all dependencies. Keep Gazebo running in its own terminal. **Do not run keyboard teleoperation or another navigator at the same time:** only one process should command `/cmd_vel`.
+
+The navigator subscribes to `/odom` and `/scan`, publishes `/cmd_vel`, and displays its graph/path in an OpenCV window. Its main states are `FOLLOW` (drive along a planned edge), `BACKTRACK` (return toward the previous node), `REPLAN` (find another route), and `DONE`. It may stop temporarily while waiting for a fresh scan or a validated motion plan. To terminate it, press **Ctrl+C in the navigator terminal**, and verify the robot stops.
+
+**Check the installed executable:** `ros2 pkg prefix vmc2_project` shows the active package prefix. If editing the source does not affect the launched code, rebuild and re-source this workspace. The navigator is not started by simply opening Gazebo unless your local launch configuration explicitly includes it.
+
+## 8. Launch and use LiDAR Explorer
+
+`tools/lidar_explorer.py` is a **read-only ROS 2/OpenCV diagnostic tool**, separate from the autonomous `navigator.py`. It subscribes to `/scan` and `/odom`, uses TF to transform scans, and opens three windows. It **does not** publish `/cmd_vel`, so it will not drive the robot. Start Gazebo first, then run the explorer in a separate terminal with a graphical desktop:
+
+```bash
+cd "$HOME/shared/amaze-nav"  # repository root
+source /opt/ros/humble/setup.bash
+source "$HOME/shared/ros2_ws/install/setup.bash"
+bash tools/run_lidar_explorer.sh
+```
+
+The launcher finds the repository from its own `tools/` directory and uses the sibling workspace at `$HOME/shared/ros2_ws`. The expected layout is:
+
+```text
+$HOME/
+├── shared/
+│   ├── amaze-nav/                  # repository root (current directory)
+│   │   ├── tools/
+│   │   │   ├── run_lidar_explorer.sh
+│   │   │   ├── lidar_explorer.py
+│   │   │   ├── trajectory_display.py
+│   │   │   └── perception_geometry.py
+│   │   └── vmc2_project/src/perception.py
+│   └── ros2_ws/                   # ROS workspace, sibling of amaze-nav
+│       └── src/vmc2_project -> ../../amaze-nav/vmc2_project
+└── .gazebo/models/
+    ├── project_track/
+    └── project_track_no_obs/
+```
+
+`perception_geometry.py` is imported directly by the explorer, and `perception.py` is loaded from `$ROS_WS/src/vmc2_project/src`. The updated launcher sets `PYTHONPATH` to include Ubuntu's system Python packages and the workspace package's `src` folder, then runs `python3 tools/lidar_explorer.py`. It checks that both files exist; ROS 2, OpenCV and NumPy must also be installed. **Use the updated launcher supplied with this documentation**—the old launcher incorrectly expected `ros2_ws` *inside* `amaze-nav`. Do not run the explorer with `ros2 run vmc2_project lidar_explorer.py`.
+
+### Three visualization windows
+
+- **Sensor Frame:** raw valid LiDAR returns in sensor-local coordinates (+X forward, +Y left).
+- **Odom Frame:** the latest scan transformed through TF into the fixed odometry frame, displayed with a camera centered on the sensor.
+- **Edge Frame:** selected directed grid edge in `(s, t)` coordinates, cross-sectional slice and candidate openings, robot position, selected plan and representative feasible/rejected trajectories. `s` points along the edge and `+t` to its left.
+
+Select/focus an OpenCV window before pressing a key. Controls verified against `lidar_explorer.py`:
+
+| Key | Action |
+| --- | --- |
+| `[` / `]` | Move the selected cross-sectional slice backward / forward by 0.10 m |
+| `,` / `.` | Select the previous / next directed graph edge; reset edge-specific diagnostics |
+| `p` | Print the selected slice's profile to the terminal |
+| `b` | Run and log passability assessment of the selected edge at the latest observed robot position |
+| `t` | Run `plan_motion()` on the latest transformed observation and show/log feasible and rejected trajectory candidates |
+| `v` | Cycle `best` → `feasible` → `debug` display modes |
+| `+` / `-` | Increase / decrease number of displayed alternatives (steps of five) |
+| `k` / `j` | Increase / decrease the maximum curvature used for *explorer planning* (1/m) |
+| `n` / `m` | Increase / decrease the *explorer* safety margin by 0.01 m |
+
+**Typical workflow:** position the robot using Gazebo/teleoperation **with the navigator stopped**, choose the directed edge with `,` / `.`, inspect slices with `[` / `]`, press `p` for slice details, `b` for passability, then `t` to sample and visualize candidate motions. Press `v` to compare viable paths and rejection examples. Allow a fresh scan after changing the margin with `m`/`n` before running `t` again.
+
+`k`/`j` and `m`/`n` change parameters **in the explorer**, not those used by an independently running navigator. Displayed trajectories are candidate paths checked against observed returns; unobserved space is not guaranteed free. A proposed segment after a `STOP / ROTATE` step is **hypothetical** until a fresh scan and a new plan. Stop the explorer with **Ctrl+C** in its terminal; its windows should close on shutdown.
+
+For troubleshooting, diagnostic interpretation and links to the perception API, see [RViz & debugging](debugging.md#standalone-lidar-trajectory-explorer-implemented) and [Perception API](perception-api.md).
+
+## 9. Verify sensors and visualize in RViz
 
 In another sourced terminal:
 
@@ -144,7 +216,7 @@ ros2 run turtlebot3_teleop teleop_keyboard
 
 Only run teleoperation when the automated navigator is stopped/disabled.
 
-## 8. Troubleshooting: Gazebo shows neither the maze nor the robot
+## 10. Troubleshooting: Gazebo shows neither the maze nor the robot
 
 First verify the chosen paths:
 
@@ -157,10 +229,10 @@ find "$MAZE_MODELS" -maxdepth 3 \
 ros2 pkg prefix vmc2_project
 ```
 
-If the models are installed at `$HOME/shared/.gazebo/models`, **but the model search path lists only TurtleBot3's own models**, point `MAZE_MODELS` at the shared directory, update `GAZEBO_MODEL_PATH`, and fully restart Gazebo:
+If the models are not found, check that they are directly under `$HOME/.gazebo/models`, append that directory to `GAZEBO_MODEL_PATH`, and fully restart Gazebo:
 
 ```bash
-export MAZE_MODELS="$HOME/shared/.gazebo/models"
+export MAZE_MODELS="$HOME/.gazebo/models"
 export GAZEBO_MODEL_PATH="$MAZE_MODELS${GAZEBO_MODEL_PATH:+:$GAZEBO_MODEL_PATH}"
 ```
 
@@ -174,7 +246,7 @@ ros2 service list | grep -E 'spawn_entity|get_entity'
 
 Look for `Unable to find uri`, `model://project_track`, spawning errors, or an incorrect world selection. Also inspect Gazebo's model list and reset the camera view.
 
-## 9. Setup checklist
+## 11. Setup checklist
 
 - [ ] Repository includes `vmc2_project`, `project_track`, and `project_track_no_obs`.
 - [ ] `ROS_WS` points to the correct workspace.
@@ -186,5 +258,7 @@ Look for `Unable to find uri`, `model://project_track`, spawning errors, or an i
 - [ ] The maze and TurtleBot appear in Gazebo.
 - [ ] `/scan` and `/odom` publish.
 - [ ] RViz displays LiDAR correctly.
+- [ ] The navigator runs in a separate terminal and receives `/odom` and `/scan`.
+- [ ] The explorer launcher/script paths have been checked, and its diagnostic window opens (when installed).
 
 Next: [edge ground-truth exploration](edge-ground-truth.md) or [controller-only debug tests](controller-debug.md).

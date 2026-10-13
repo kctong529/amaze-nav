@@ -8,6 +8,8 @@
 
 **Prerequisite:** Complete [Environment setup](setup.md) first; the repository already contains the extracted models and ROS package.
 
+For an end-to-end run, start Gazebo first and then start `navigator.py` in a separate sourced terminal using [the navigator launch instructions](setup.md#7-run-the-autonomous-navigator). For perception-only investigation use [LiDAR Explorer](setup.md#8-launch-and-use-lidar-explorer), which does not send velocity commands. Once the robot is positioned with navigator control disabled, choose an edge with `,`/`.`, assess with `b`, and inspect motion candidates with `t`; these visual trials are distinct from an autonomous checkpoint run.
+
 **Scope:** This document validates the implemented navigator, including perception decisions, control, and replanning. For **manual teleoperation, ROS bag collection, and the team’s complete P-clear/P-constrained/B labels for all 40 edges**, use the [ground-truth survey](edge-ground-truth.md). Do not treat the four cases below as a complete ground-truth inventory.
 
 **Ground-truth reference:** [Annotated 40-edge map and table](edge-ground-truth.md#current-annotated-ground-truth). Green = constrained passable, red = blocked, unmarked = unobstructed passable. Include all three classes when evaluating false-blocked decisions and traversal success.

@@ -39,16 +39,29 @@ The provided navigator uses `FOLLOW → BACKTRACK → REPLAN → FOLLOW` for blo
 
 ## Quick start
 
-The repository already contains the extracted `vmc2_project/`, `project_track/`, and `project_track_no_obs/` directories. **No separate archive download or extraction is required.** In the course's Ubuntu / ROS 2 Humble environment, configure your workspace and Gazebo model directory using [Environment setup](docs/setup.md) (paths depend on your machine).
+The repository already contains the extracted `vmc2_project/`, `project_track/`, and `project_track_no_obs/` directories. **No separate archive download or extraction is required.** In the course's Ubuntu / ROS 2 Humble environment, use the documented layout: repo root `$HOME/shared/amaze-nav` (assumed current directory), ROS workspace `$HOME/shared/ros2_ws`, and Gazebo models `$HOME/.gazebo/models`. Follow [Environment setup](docs/setup.md) to install the package and models.
 
 After following that guide to install the local ROS package and models, set `GAZEBO_MODEL_PATH`, build/source the workspace, and launch:
 
 ```bash
+export REPO_ROOT="$HOME/shared/amaze-nav"
+export ROS_WS="$HOME/shared/ros2_ws"
+export MAZE_MODELS="$HOME/.gazebo/models"
+export GAZEBO_MODEL_PATH="$MAZE_MODELS${GAZEBO_MODEL_PATH:+:$GAZEBO_MODEL_PATH}"
 cd "$ROS_WS"
 colcon build --symlink-install --packages-select vmc2_project
 source "$ROS_WS/install/setup.bash"
 ros2 launch vmc2_project project.launch.py
 ```
+
+Then open a **second sourced terminal** to run the autonomous navigator:
+
+```bash
+PYTHONPATH="/usr/lib/python3/dist-packages${PYTHONPATH:+:$PYTHONPATH}" \
+  ros2 run vmc2_project navigator.py
+```
+
+For interactive LiDAR / trajectory inspection, run `cd "$HOME/shared/amaze-nav" && bash tools/run_lidar_explorer.sh` in a separate ROS-sourced terminal. The updated launcher resolves the sibling workspace `$HOME/shared/ros2_ws` and runs `tools/lidar_explorer.py` and requires `tools/perception_geometry.py` plus the installed workspace’s `perception.py`. The explorer visualizes candidate paths but **does not drive the robot**. The explorer uses `[`/`]` for slices, `,`/`.` for edges, `t` for trajectories, `b` for passability, and `v` for view modes. Detailed prerequisites, controls, ROS terminal setup, and troubleshooting: [Setup — run navigator and explorer](docs/setup.md#7-run-the-autonomous-navigator) and [RViz & debugging](docs/debugging.md#standalone-lidar-trajectory-explorer-implemented). Never run teleoperation alongside autonomous navigation.
 
 Use the [ground-truth survey](docs/edge-ground-truth.md) for teleoperation or [navigator tests](docs/testing.md) for repeatable acceptance tests. Use the obstacle-free model for initial controller tests; consult the launch file for how that world is selected.
 

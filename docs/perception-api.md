@@ -4,7 +4,7 @@
 
 ---
 
-**Status:** Tested in a standalone LiDAR/OpenCV explorer; **not integrated into `navigator.py`**. The source is `vmc2_project/src/perception.py`, which is independent of ROS. `tools/lidar_explorer.py` adapts ROS TF/LaserScan observations into the API. This document describes implemented behavior, not guarantees of physical safety.
+**Status:** Integrated into the ROS2 `navigator.py` baseline and also accessible in a standalone LiDAR/OpenCV explorer. The source is `vmc2_project/src/perception.py`, which is independent of ROS. `tools/lidar_explorer.py` adapts ROS TF/LaserScan observations into the API. For instructions to start the explorer and interpret its keyboard shortcuts, see [the setup guide](setup.md#8-launch-and-use-lidar-explorer). This document describes implemented behavior, not guarantees of physical safety.
 
 **For the algorithm and motivation, start with [the planning strategy](perception-strategy.md).** This document specifies API calls, types and integration requirements.
 
