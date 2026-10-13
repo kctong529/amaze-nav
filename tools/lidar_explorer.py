@@ -579,13 +579,13 @@ def draw_edge_frame(
     cv2.putText(image, f"Gap widths (observed) | required: {required:.3f} m",
                 (15, 161), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (35, 35, 35), 1)
     if candidate_gaps:
-        for idx, gap in enumerate(sorted(candidate_gaps, key=lambda g: g.width, reverse=True)[:3]):
-            usable = max(0.0, gap.width - required)
-            text = (f"{idx+1}: t=[{gap.left:+.3f}, {gap.right:+.3f}] m "
-                    f"W={gap.width:.3f} m; usable={usable:.3f} m")
+        for idx, gap in enumerate(sorted(candidate_gaps, key=lambda g: g["width"], reverse=True)[:3]):
+            usable = max(0.0, gap["width"] - required)
+            text = (f"{idx+1}: t=[{gap['left']:+.3f}, {gap['right']:+.3f}] m "
+                    f"W={gap['width']:.3f} m; usable={usable:.3f} m")
             cv2.putText(image, text, (15, 182 + 20 * idx),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.41,
-                        (0, 115, 0) if gap.width >= required else (0, 120, 190), 1)
+                        (0, 115, 0) if gap["width"] >= required else (0, 120, 190), 1)
         if len(candidate_gaps) > 3:
             cv2.putText(image, f"(+{len(candidate_gaps)-3} more; press p for all slices)",
                         (15, 242), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (65, 65, 65), 1)
