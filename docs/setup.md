@@ -184,7 +184,7 @@ The explorer paints its three windows at startup and requests always-on-top plac
 | `j` / `k` | **Slice** | Move the selected slice backward / forward by 0.10 m (Vim down/up) |
 | `h` / `l` | **Edge** | Select the previous / next directed graph edge (Vim left/right); clear edge-specific results |
 | `c` | **Current** | Immediately select the likely directed edge and focus the passability rejection slice (or narrowest observed gap) |
-| `a` | **Auto** | Toggle current-edge detection every 1 s; preserve the selected slice unless the directed edge changes |
+| `a` | **Auto** | Toggle current-edge detection every 1 s; refocus the passability slice every second, even if the edge is unchanged |
 | `p` | **Profile** | Print the selected cross-sectional slice profile |
 | `b` | **Blockage** | Assess the selected edge's passability and log the result |
 | `t` | **Trajectory** | Generate, display and log local trajectory candidates |
@@ -273,7 +273,7 @@ Next: [edge ground-truth exploration](edge-ground-truth.md) or [controller-only 
 
 ### Navigator-aligned diagnostics
 
-LiDAR Explorer always uses the robot base pose from `/odom` (within 0.3 seconds of the LiDAR scan) for trajectory proposals. `t` runs the shared `plan_motion()` and logs both the planner result and the passability assessment. A compact **NAV CHECK: UNKNOWN / BLOCKED / CLEAR** label appears in the top-right of the Edge Frame; **NO POSE** means a sufficiently recent base pose is unavailable. The `a` key now toggles automatic current-edge tracking every second. The slice is reselected only when the directed edge changes (manual `c` always refocuses it). The selected slice position `s` appears unobtrusively at the bottom-right; point counts are available through `p` rather than the overlay.
+LiDAR Explorer always uses the robot base pose from `/odom` (within 0.3 seconds of the LiDAR scan) for trajectory proposals. `t` runs the shared `plan_motion()` and logs both the planner result and the passability assessment. A compact **NAV CHECK: UNKNOWN / BLOCKED / CLEAR** label appears in the top-right of the Edge Frame; **NO POSE** means a sufficiently recent base pose is unavailable. The `a` key now toggles automatic current-edge tracking every second. The slice is reselected every second using the latest passability assessment, even when the directed edge remains unchanged (`c` performs an immediate refresh). The selected slice position `s` appears unobtrusively at the bottom-right; point counts are available through `p` rather than the overlay.
 
 The defaults match the navigator's 0.089 m robot radius, 0.03 m safety margin, and 8.0 1/m maximum curvature. `z`/`x` and `m`/`n` still adjust local trajectory experiments; the **NAV CHECK** passability label uses the navigator's fixed default clearance threshold, so it is not affected by the experimental controls. `b` logs the detailed passability reason. An `UNKNOWN` status does **not** mean the edge is clear.
 

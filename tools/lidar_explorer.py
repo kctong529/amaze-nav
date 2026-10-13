@@ -532,7 +532,7 @@ def draw_edge_frame(
                             (0, 125, 190), 2, cv2.LINE_AA, tipLength=0.25)
 
     if planner_label:
-        cv2.putText(image, f"Plan: {planner_label[:45]}", (15, 138),
+        cv2.putText(image, f"Plan: {planner_label[:45]}", (15, 76),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.46, (40, 40, 40), 1)
 
     # Draw the robot in edge coordinates.
@@ -551,33 +551,33 @@ def draw_edge_frame(
     # Compact display counters; computation is unaffected by display limits.
     cv2.putText(
         image,
-        f"Mode: {display_mode}  (+/-: {display_limit} alternatives)",
-        (15, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (45, 45, 45), 1,
+        f"Mode: {display_mode}  |  +/- {display_limit}",
+        (15, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (45, 45, 45), 1,
     )
     cv2.putText(
         image,
         f"Evaluated: {total_feasible} feasible / {total_rejected} rejected",
-        (15, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (45, 45, 45), 1,
+        (15, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (45, 45, 45), 1,
     )
 
     # Show dimensions of observed openings (not assumed free corridors).
     required = required_width
     cv2.putText(image, f"Gap widths (observed) | required: {required:.3f} m",
-                (15, 161), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (35, 35, 35), 1)
+                (15, 101), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (35, 35, 35), 1)
     if candidate_gaps:
         for idx, gap in enumerate(sorted(candidate_gaps, key=lambda g: g["width"], reverse=True)[:3]):
             usable = max(0.0, gap["width"] - required)
             text = (f"{idx+1}: t=[{gap['left']:+.3f}, {gap['right']:+.3f}] m "
                     f"W={gap['width']:.3f} m; usable={usable:.3f} m")
-            cv2.putText(image, text, (15, 182 + 20 * idx),
+            cv2.putText(image, text, (15, 122 + 20 * idx),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.41,
                         (0, 115, 0) if gap["width"] >= required else (0, 120, 190), 1)
         if len(candidate_gaps) > 3:
             cv2.putText(image, f"(+{len(candidate_gaps)-3} more; press p for all slices)",
-                        (15, 242), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (65, 65, 65), 1)
+                        (15, 182), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (65, 65, 65), 1)
     else:
         cv2.putText(image, "No internal gap measured at selected slice",
-                    (15, 182), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (70, 70, 70), 1)
+                    (15, 122), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (70, 70, 70), 1)
 
     # Compact live passability status, separate from trajectory results.
     # The label is right-aligned so it does not obscure the main trajectory view.
@@ -591,21 +591,26 @@ def draw_edge_frame(
     cv2.putText(image, label, (size - text_size[0] - 12, 28),
                 font, 0.48, label_color, 1, cv2.LINE_AA)
 
-    # Keep only the selected longitudinal position in a quiet corner.
+    # A compact two-row footer keeps controls visible without obscuring paths.
+    # Reserve the lower-right corner for the selected longitudinal position.
     slice_label = f"s={slice_s:.2f} m"
-    slice_label_size, _ = cv2.getTextSize(slice_label, font, 0.46, 1)
-    cv2.putText(image, slice_label,
-                (size - slice_label_size[0] - 12, size - 12),
-                font, 0.46, (70, 70, 70), 1, cv2.LINE_AA)
-
-    put_multiline_text(
-        image,
-        "Use j / k to move slice back / forward\n"
-        "Use h / l for edges; c = current; a = auto edge\n"
-        "Use p to log; b to assess; t to plan\n"
-        "Use v for view; +/- count; z/x curvature; m/n margin",
-        (15, size - 115),
+    footer_scale = 0.40
+    slice_label_size, _ = cv2.getTextSize(slice_label, font, footer_scale, 1)
+    slice_x = size - slice_label_size[0] - 12
+    footer_rows = (
+        "h/l edges  j/k slices  c current  a auto",
+        "t plan  b check  p log  v view  +/- count  z/x curve  m/n margin",
     )
+    for row_index, footer_text in enumerate(footer_rows):
+        baseline_y = size - 35 + row_index * 20
+        available_width = (size - 24) if row_index == 0 else (slice_x - 22)
+        scale = footer_scale
+        while scale > 0.28 and cv2.getTextSize(footer_text, font, scale, 1)[0][0] > available_width:
+            scale -= 0.02
+        cv2.putText(image, footer_text, (12, baseline_y), font, scale,
+                    (75, 75, 75), 1, cv2.LINE_AA)
+    cv2.putText(image, slice_label, (slice_x, size - 15),
+                font, footer_scale, (70, 70, 70), 1, cv2.LINE_AA)
 
     cv2.imshow(EDGE_WINDOW, image)
 
@@ -714,8 +719,8 @@ class LidarExplorer(Node):
 
         # Process OpenCV GUI events independently of TF availability.
         self.create_timer(0.05, self.update_gui)
-        # Automatic selection is independent of scan render rate and only
-        # changes the focused slice when the directed edge changes.
+        # Auto mode reevaluates both the directed edge and its diagnostic slice
+        # once per second, using the next transformed LiDAR scan.
         self.create_timer(1.0, self.refresh_current_edge)
 
     @property
@@ -748,9 +753,9 @@ class LidarExplorer(Node):
     def select_nearest_edge(self, *, only_on_change=False):
         """Find the likely current directed edge from position and heading.
 
-        Automatic updates preserve the manually chosen slice on an unchanged
-        edge. Explicit 'c' refreshes the passability-selected slice even if
-        the current directed edge remains the same.
+        Automatic updates also refocus the passability-selected slice, even
+        when the directed edge is unchanged. Explicit 'c' forces an immediate
+        edge selection and refocus.
         """
         if self.latest_sensor_xy is None or self.latest_sensor_yaw is None:
             if not only_on_change:
@@ -761,6 +766,9 @@ class LidarExplorer(Node):
                             np.sin(self.latest_sensor_yaw)))
         index, context = choose_current_directed_edge(self.edges, position, heading)
         if only_on_change and index == self.edge_index:
+            # Keep the current edge and cached plan, but reevaluate the
+            # diagnostic slice on the next transformed scan.
+            self.focus_narrowest_on_next_scan = True
             return
         self.edge_index = index
         self.slice_s = 0.712
@@ -773,7 +781,7 @@ class LidarExplorer(Node):
         )
 
     def refresh_current_edge(self):
-        """On auto mode, select a new edge at most once per second."""
+        """On auto mode, refresh the edge and its passability slice each second."""
         if self.auto_current_edge:
             self.select_nearest_edge(only_on_change=True)
 
@@ -1162,7 +1170,7 @@ class LidarExplorer(Node):
             self.auto_current_edge = not self.auto_current_edge
             self.get_logger().info(
                 f"Automatic current-edge selection: {'ON' if self.auto_current_edge else 'OFF'} "
-                "(1 s interval; keep slice when edge is unchanged)"
+                "(1 s interval; refresh passability slice even on the same edge)"
             )
             if self.auto_current_edge:
                 self.refresh_current_edge()
