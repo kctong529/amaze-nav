@@ -574,6 +574,25 @@ def draw_edge_frame(
         (15, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (45, 45, 45), 1,
     )
 
+    # Show dimensions of observed openings (not assumed free corridors).
+    required = required_width
+    cv2.putText(image, f"Gap widths (observed) | required: {required:.3f} m",
+                (15, 161), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (35, 35, 35), 1)
+    if candidate_gaps:
+        for idx, gap in enumerate(sorted(candidate_gaps, key=lambda g: g.width, reverse=True)[:3]):
+            usable = max(0.0, gap.width - required)
+            text = (f"{idx+1}: t=[{gap.left:+.3f}, {gap.right:+.3f}] m "
+                    f"W={gap.width:.3f} m; usable={usable:.3f} m")
+            cv2.putText(image, text, (15, 182 + 20 * idx),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.41,
+                        (0, 115, 0) if gap.width >= required else (0, 120, 190), 1)
+        if len(candidate_gaps) > 3:
+            cv2.putText(image, f"(+{len(candidate_gaps)-3} more; press p for all slices)",
+                        (15, 242), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (65, 65, 65), 1)
+    else:
+        cv2.putText(image, "No internal gap measured at selected slice",
+                    (15, 182), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (70, 70, 70), 1)
+
     # Labels.
     cv2.putText(
         image,
@@ -597,10 +616,10 @@ def draw_edge_frame(
 
     put_multiline_text(
         image,
-        "Use [ and ] to move the slice\n"
-        "Use , and . to change the edge\n"
+        "Use j / k to move slice back / forward\n"
+        "Use h / l for previous / next edge; c = current\n"
         "Use p to log; b to assess; t to plan\n"
-        "Use v to change view; +/- to adjust count",
+        "Use v for view; +/- count; z/x curvature",
         (15, size - 60),
     )
 
@@ -663,7 +682,10 @@ class LidarExplorer(Node):
         # Cross-section parameters.
         self.slice_thickness = SLICE_THICKNESS
         self.slice_step = SLICE_STEP
-        self.edges = generate_grid_edges()
+        base_edges = generate_grid_edges()
+        # Preserve original manual selection order; add reverse directions so
+        # auto-selection can match the robot heading on either traversal.
+        self.edges = base_edges + [(b, a) for a, b in base_edges]
 
         # Initially select the previously tested edge.
         self.edge_index = self.edges.index((
@@ -704,6 +726,56 @@ class LidarExplorer(Node):
             f"{len(self.edges)}: {start} -> {end}"
         )
         
+    def reset_edge_diagnostics(self):
+        """Invalidate edge-frame data and cached candidate paths after selection."""
+        self.latest_edge_observation = None
+        self.latest_slice_results = []
+        self.opening_tracker.reset()
+        self.latest_opening_diagnostics = ()
+        self.latest_trajectory = None
+        self.latest_alignment_st = None
+        self.latest_plan = None
+        self.latest_feasible_trajectories = []
+        self.latest_rejected_trajectories = []
+
+    def select_nearest_edge(self):
+        """Select the nearest graph segment, directed along the sensor heading.
+
+        This is geometric proximity, not knowledge of the navigator's planned
+        edge. At intersections, heading breaks ties between nearby segments.
+        """
+        if self.latest_sensor_xy is None or self.latest_sensor_yaw is None:
+            self.get_logger().warn("No transformed scan/pose yet; cannot locate current edge")
+            return
+        position = np.asarray(self.latest_sensor_xy, dtype=float)
+        heading = np.array((np.cos(self.latest_sensor_yaw),
+                            np.sin(self.latest_sensor_yaw)))
+        candidates = []
+        for index, (a, b) in enumerate(self.edges):
+            start, end = np.asarray(a, float), np.asarray(b, float)
+            vector = end - start
+            t = float(np.clip(np.dot(position - start, vector) /
+                              np.dot(vector, vector), 0.0, 1.0))
+            nearest = start + t * vector
+            distance = float(np.linalg.norm(position - nearest))
+            alignment = float(np.dot(heading, vector / np.linalg.norm(vector)))
+            candidates.append((distance, -alignment, index, t))
+        closest = min(item[0] for item in candidates)
+        # At a node, several segments can be nearly equidistant; prioritize
+        # heading only among those within 0.10 m of the nearest one.
+        candidates = [item for item in candidates if item[0] <= closest + 0.10]
+        distance, neg_alignment, index, fraction = min(
+            candidates, key=lambda item: (item[1], item[0], item[2]))
+        self.edge_index = index
+        self.slice_s = round(float(np.clip(fraction * EDGE_LENGTH, 0.0, EDGE_LENGTH)), 3)
+        self.reset_edge_diagnostics()
+        self.log_selected_edge()
+        self.get_logger().info(
+            f"Nearest edge: distance={distance:.3f} m, "
+            f"heading alignment={-neg_alignment:+.2f}; "
+            f"slice s={self.slice_s:.3f} m (press t to plan after next scan)"
+        )
+
     def log_slice_profile(self):
         """Log measured gap intervals for each longitudinal slice."""
         if not self.latest_slice_results:
@@ -963,51 +1035,38 @@ class LidarExplorer(Node):
         """Poll nonblocking OpenCV keys and update diagnostic display controls."""
         key = cv2.waitKey(1) & 0xFF
 
-        if key == ord("]"):
+        if key == ord("k"):
             self.slice_s = min(
                 1.424,
                 self.slice_s + SLICE_STEP,
             )
 
-        elif key == ord("["):
+        elif key == ord("j"):
             self.slice_s = max(
                 0.0,
                 self.slice_s - SLICE_STEP,
             )
 
-        elif key == ord("."):
+        elif key == ord("l"):
             self.edge_index = (
                 self.edge_index + 1
             ) % len(self.edges)
 
             self.slice_s = 0.712
-            self.latest_edge_observation = None
-            self.latest_slice_results = []
-            self.opening_tracker.reset()
-            self.latest_opening_diagnostics = ()
-            self.latest_trajectory = None
-            self.latest_alignment_st = None
-            self.latest_plan = None
-            self.latest_feasible_trajectories = []
-            self.latest_rejected_trajectories = []
+            self.reset_edge_diagnostics()
             self.log_selected_edge()
 
-        elif key == ord(","):
+        elif key == ord("h"):
             self.edge_index = (
                 self.edge_index - 1
             ) % len(self.edges)
 
             self.slice_s = 0.712
-            self.latest_edge_observation = None
-            self.latest_slice_results = []
-            self.opening_tracker.reset()
-            self.latest_opening_diagnostics = ()
-            self.latest_trajectory = None
-            self.latest_alignment_st = None
-            self.latest_plan = None
-            self.latest_feasible_trajectories = []
-            self.latest_rejected_trajectories = []
+            self.reset_edge_diagnostics()
             self.log_selected_edge()
+
+        elif key == ord("c"):
+            self.select_nearest_edge()
 
         elif key == ord("v"):
             modes = ("best", "feasible", "debug")
@@ -1025,11 +1084,11 @@ class LidarExplorer(Node):
         elif key == ord("p"):
             self.log_slice_profile()
 
-        elif key == ord("k"):
+        elif key == ord("x"):
             self.planner_max_curvature = min(15.0, self.planner_max_curvature + 1.0)
             self.get_logger().info(f"Planner max curvature: {self.planner_max_curvature:.1f} /m")
 
-        elif key == ord("j"):
+        elif key == ord("z"):
             self.planner_max_curvature = max(2.0, self.planner_max_curvature - 1.0)
             self.get_logger().info(f"Planner max curvature: {self.planner_max_curvature:.1f} /m")
 

@@ -173,25 +173,27 @@ $HOME/
 
 - **Sensor Frame:** raw valid LiDAR returns in sensor-local coordinates (+X forward, +Y left).
 - **Odom Frame:** the latest scan transformed through TF into the fixed odometry frame, displayed with a camera centered on the sensor.
-- **Edge Frame:** selected directed grid edge in `(s, t)` coordinates, cross-sectional slice and candidate openings, robot position, selected plan and representative feasible/rejected trajectories. `s` points along the edge and `+t` to its left.
+- **Edge Frame:** selected directed grid edge in `(s, t)` coordinates, cross-sectional slice and measured gap dimensions (boundary coordinates, raw width, and usable center width after clearance), robot position, selected plan and representative feasible/rejected trajectories. `s` points along the edge and `+t` to its left.
 
-Select/focus an OpenCV window before pressing a key. Controls verified against `lidar_explorer.py`:
+Select/focus an OpenCV window before pressing a key. Controls verified against `lidar_explorer.py` (the **Meaning** column is a mnemonic; the actual shortcut is in **Key**):
 
-| Key | Action |
-| --- | --- |
-| `[` / `]` | Move the selected cross-sectional slice backward / forward by 0.10 m |
-| `,` / `.` | Select the previous / next directed graph edge; reset edge-specific diagnostics |
-| `p` | Print the selected slice's profile to the terminal |
-| `b` | Run and log passability assessment of the selected edge at the latest observed robot position |
-| `t` | Run `plan_motion()` on the latest transformed observation and show/log feasible and rejected trajectory candidates |
-| `v` | Cycle `best` → `feasible` → `debug` display modes |
-| `+` / `-` | Increase / decrease number of displayed alternatives (steps of five) |
-| `k` / `j` | Increase / decrease the maximum curvature used for *explorer planning* (1/m) |
-| `n` / `m` | Increase / decrease the *explorer* safety margin by 0.01 m |
+| Key | Meaning | Action |
+| --- | --- | --- |
+| `j` / `k` | **Slice** | Move the selected slice backward / forward by 0.10 m (Vim down/up) |
+| `h` / `l` | **Edge** | Select the previous / next directed graph edge (Vim left/right); clear edge-specific results |
+| `c` | **Current** | Select the nearest directed edge using the robot's position and heading; focus its slice |
+| `p` | **Profile** | Print the selected cross-sectional slice profile |
+| `b` | **Blockage** | Assess the selected edge's passability and log the result |
+| `t` | **Trajectory** | Generate, display and log local trajectory candidates |
+| `v` | **View** | Cycle `best` → `feasible` → `debug` display modes |
+| `+` / `-` | **Count** | Increase / decrease the maximum number of displayed alternatives by five |
+| `z` / `x` | **Curvature** | Decrease / increase the explorer's maximum curvature (1/m) |
+| `m` / `n` | **Margin** | Decrease / increase the explorer's safety margin by 0.01 m |
 
-**Typical workflow:** position the robot using Gazebo/teleoperation **with the navigator stopped**, choose the directed edge with `,` / `.`, inspect slices with `[` / `]`, press `p` for slice details, `b` for passability, then `t` to sample and visualize candidate motions. Press `v` to compare viable paths and rejection examples. Allow a fresh scan after changing the margin with `m`/`n` before running `t` again.
 
-`k`/`j` and `m`/`n` change parameters **in the explorer**, not those used by an independently running navigator. Displayed trajectories are candidate paths checked against observed returns; unobserved space is not guaranteed free. A proposed segment after a `STOP / ROTATE` step is **hypothetical** until a fresh scan and a new plan. Stop the explorer with **Ctrl+C** in its terminal; its windows should close on shutdown.
+**Typical workflow:** position the robot using Gazebo/teleoperation **with the navigator stopped**, press `c` to locate the nearest directed edge (or choose manually with `h` / `l`), inspect slices with `j` / `k`, press `p` for slice details, `b` for passability, then `t` to sample and visualize candidate motions. Press `v` to compare viable paths and rejection examples. Allow a fresh scan after changing the margin with `m`/`n` before running `t` again.
+
+`z`/`x` and `m`/`n` change parameters **in the explorer**, not those used by an independently running navigator. `c` uses geometric proximity and heading, **not the navigator's internal current-edge state**. The measured usable width is `max(0, measured gap width - robot width - twice the explorer safety margin)`; it does not certify that the opening is reachable. Displayed trajectories are candidate paths checked against observed returns; unobserved space is not guaranteed free. A proposed segment after a `STOP / ROTATE` step is **hypothetical** until a fresh scan and a new plan. Stop the explorer with **Ctrl+C** in its terminal; its windows should close on shutdown.
 
 For troubleshooting, diagnostic interpretation and links to the perception API, see [RViz & debugging](debugging.md#standalone-lidar-trajectory-explorer-implemented) and [Perception API](perception-api.md).
 
