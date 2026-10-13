@@ -92,6 +92,57 @@ def generate_grid_edges():
     return edges
 
 
+def choose_current_directed_edge(edges, position, heading, node_radius=0.30):
+    """Return (directed edge index, explanation) from robot pose and grid edges.
+
+    Within node_radius of a grid vertex, heading determines the *outgoing*
+    edge at that vertex. This avoids selecting an incoming edge when the
+    robot is near an intersection. Outside node neighborhoods, project the
+    position onto segments and prefer heading among near-equal distances.
+    """
+    position = np.asarray(position, dtype=float)
+    heading = np.asarray(heading, dtype=float)
+    if position.shape != (2,) or heading.shape != (2,):
+        raise ValueError("position and heading must be XY vectors")
+    heading_norm = float(np.linalg.norm(heading))
+    if heading_norm < 1e-9:
+        raise ValueError("heading vector must be nonzero")
+    heading = heading / heading_norm
+
+    nodes = sorted({tuple(a) for a, _ in edges} | {tuple(b) for _, b in edges})
+    nearest_node = min(nodes, key=lambda node: np.linalg.norm(position - node))
+    node_distance = float(np.linalg.norm(position - nearest_node))
+    if node_distance <= node_radius:
+        outgoing = []
+        for idx, (a, b) in enumerate(edges):
+            if tuple(a) != nearest_node:
+                continue
+            direction = np.asarray(b, dtype=float) - np.asarray(a, dtype=float)
+            direction /= np.linalg.norm(direction)
+            alignment = float(np.dot(heading, direction))
+            outgoing.append((-alignment, idx))
+        if outgoing:
+            negative_alignment, idx = min(outgoing)
+            return idx, (f"near node {nearest_node} ({node_distance:.3f} m), "
+                         f"outgoing heading alignment={-negative_alignment:+.2f}")
+
+    candidates = []
+    for idx, (a, b) in enumerate(edges):
+        start, end = np.asarray(a, float), np.asarray(b, float)
+        vector = end - start
+        fraction = float(np.clip(np.dot(position - start, vector) /
+                                 np.dot(vector, vector), 0.0, 1.0))
+        nearest = start + fraction * vector
+        distance = float(np.linalg.norm(position - nearest))
+        alignment = float(np.dot(heading, vector / np.linalg.norm(vector)))
+        candidates.append((distance, -alignment, idx))
+    closest = min(item[0] for item in candidates)
+    nearby = [item for item in candidates if item[0] <= closest + 0.10]
+    distance, neg_alignment, idx = min(nearby, key=lambda item: (item[1], item[0], item[2]))
+    return idx, (f"along edge ({distance:.3f} m away), "
+                 f"heading alignment={-neg_alignment:+.2f}")
+
+
 def put_multiline_text(
     image, text, origin, font_scale=0.55,
     color=(30, 30, 30), thickness=1, line_spacing=25,
@@ -741,10 +792,12 @@ class LidarExplorer(Node):
         self.latest_rejected_trajectories = []
 
     def select_nearest_edge(self):
-        """Select the nearest graph segment, directed along the sensor heading.
+        """Select likely forward edge; near nodes, use heading to choose the exit.
 
-        This is geometric proximity, not knowledge of the navigator's planned
-        edge. At intersections, heading breaks ties between nearby segments.
+        Close to a grid node, the next directed edge starts at that node, even
+        when a geometrically nearer segment ends there. Elsewhere, use edge
+        proximity with heading preference among nearby candidates. This is a
+        pose-based guess, not the navigator's selected route.
         """
         if self.latest_sensor_xy is None or self.latest_sensor_yaw is None:
             self.get_logger().warn("No transformed scan/pose yet; cannot locate current edge")
@@ -752,32 +805,16 @@ class LidarExplorer(Node):
         position = np.asarray(self.latest_sensor_xy, dtype=float)
         heading = np.array((np.cos(self.latest_sensor_yaw),
                             np.sin(self.latest_sensor_yaw)))
-        candidates = []
-        for index, (a, b) in enumerate(self.edges):
-            start, end = np.asarray(a, float), np.asarray(b, float)
-            vector = end - start
-            t = float(np.clip(np.dot(position - start, vector) /
-                              np.dot(vector, vector), 0.0, 1.0))
-            nearest = start + t * vector
-            distance = float(np.linalg.norm(position - nearest))
-            alignment = float(np.dot(heading, vector / np.linalg.norm(vector)))
-            candidates.append((distance, -alignment, index, t))
-        closest = min(item[0] for item in candidates)
-        # At a node, several segments can be nearly equidistant; prioritize
-        # heading only among those within 0.10 m of the nearest one.
-        candidates = [item for item in candidates if item[0] <= closest + 0.10]
-        distance, neg_alignment, index, fraction = min(
-            candidates, key=lambda item: (item[1], item[0], item[2]))
+        index, context = choose_current_directed_edge(self.edges, position, heading)
         self.edge_index = index
-        # Wait for the freshly selected edge to be analyzed, then focus its
-        # most restrictive measured cross-section (not the robot position).
+        # Analyze the selected edge with a fresh scan, then focus on the slice
+        # whose widest measured internal opening is smallest.
         self.slice_s = 0.712
         self.reset_edge_diagnostics()
         self.focus_narrowest_on_next_scan = True
         self.log_selected_edge()
         self.get_logger().info(
-            f"Nearest edge: distance={distance:.3f} m, "
-            f"heading alignment={-neg_alignment:+.2f}; "
+            f"Current edge selection: {context}; "
             "focusing narrowest observed gap slice on next scan"
         )
 

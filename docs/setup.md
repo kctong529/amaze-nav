@@ -181,7 +181,7 @@ Select/focus an OpenCV window before pressing a key. Controls verified against `
 | --- | --- | --- |
 | `j` / `k` | **Slice** | Move the selected slice backward / forward by 0.10 m (Vim down/up) |
 | `h` / `l` | **Edge** | Select the previous / next directed graph edge (Vim left/right); clear edge-specific results |
-| `c` | **Current** | Select the current directed edge from pose/heading, then focus the slice with the narrowest measured gap set |
+| `c` | **Current** | Near a node, select its likely outgoing edge from heading; otherwise select the nearest heading-aligned edge. Then focus the most restrictive measured gap slice |
 | `p` | **Profile** | Print the selected cross-sectional slice profile |
 | `b` | **Blockage** | Assess the selected edge's passability and log the result |
 | `t` | **Trajectory** | Generate, display and log local trajectory candidates |
