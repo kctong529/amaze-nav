@@ -162,142 +162,74 @@ def put_multiline_text(
         )
 
 
-def draw_lidar_points(points, size=700, scale=150):
-    """Draw LiDAR points in the robot's local sensor frame."""
+# Small diagnostic views; the edge/trajectory view retains its original size.
+DIAGNOSTIC_VIEW_SIZE = 340
+DIAGNOSTIC_PADDING = 18
+
+
+def _fit_view(points, *, origin=(0.0, 0.0), size=DIAGNOSTIC_VIEW_SIZE,
+              padding=DIAGNOSTIC_PADDING):
+    """Fit the entire current scan and the sensor origin inside a compact view.
+
+    Use a single scale on both axes to preserve LiDAR geometry. A new scan may
+    change the scale; unlike the odom frame, these views are not fixed-zoom maps.
+    """
+    pts = np.asarray(points, dtype=float).reshape(-1, 2)
+    pts = pts[np.isfinite(pts).all(axis=1)]
+    anchor = np.asarray(origin, dtype=float)
+    included = np.vstack((pts, anchor[None, :]))
+    low, high = included.min(axis=0), included.max(axis=0)
+    center = (low + high) / 2.0
+    span = max(float(np.max(high - low)), 0.25)
+    scale = (size - 2 * padding) / span
+    return center, scale
+
+
+def draw_lidar_points(points, size=DIAGNOSTIC_VIEW_SIZE):
+    """Draw a compact, automatically fitted raw LiDAR sensor-frame view."""
     image = np.full((size, size, 3), 255, dtype=np.uint8)
+    center, scale = _fit_view(points, size=size)
 
-    cx = size // 2
-    cy = size // 2
+    def to_pixel(x, y):
+        return (int(size / 2 - (y - center[1]) * scale),
+                int(size / 2 - (x - center[0]) * scale))
 
-    # Draw a reference grid every 0.5 m.
-    grid_step = int(0.5 * scale)
-
-    for offset in range(0, size // 2, grid_step):
-        for sign in (-1, 1):
-            x = cx + sign * offset
-            y = cy + sign * offset
-
-            cv2.line(
-                image, (x, 0), (x, size - 1),
-                (230, 230, 230), 1,
-            )
-            cv2.line(
-                image, (0, y), (size - 1, y),
-                (230, 230, 230), 1,
-            )
-
-    # Sensor-frame convention:
-    # +X points upward, +Y points left.
+    # Sensor-frame convention: +X upward, +Y left.
+    origin_px = to_pixel(0.0, 0.0)
     for x, y in points:
-        px = int(cx - y * scale)
-        py = int(cy - x * scale)
-
+        px, py = to_pixel(x, y)
         if 0 <= px < size and 0 <= py < size:
-            cv2.circle(
-                image, (px, py), 2, (0, 140, 255), -1
-            )
-
-    # Sensor origin.
-    cv2.circle(
-        image, (cx, cy), 7, (255, 100, 0), -1
-    )
-
-    # Forward direction (+X).
-    cv2.arrowedLine(
-        image,
-        (cx, cy),
-        (cx, cy - 45),
-        (255, 100, 0),
-        2,
-    )
-
-    cv2.putText(
-        image,
-        f"{len(points)} LiDAR points",
-        (15, 30),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.7,
-        (30, 30, 30),
-        2,
-    )
-
+            cv2.circle(image, (px, py), 1, (0, 140, 255), -1)
+    cv2.circle(image, origin_px, 4, (255, 100, 0), -1)
+    cv2.arrowedLine(image, origin_px,
+                    (origin_px[0], max(0, origin_px[1] - 18)),
+                    (255, 100, 0), 1, tipLength=0.3)
+    cv2.putText(image, f"Sensor: {len(points)} points", (8, 19),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (30, 30, 30), 1)
     cv2.imshow(SENSOR_WINDOW, image)
 
 
-def draw_world_points(points, sensor_xy=None, size=700, scale=100):
-    """
-    Draw LiDAR points in the odom frame with a camera that
-    follows the sensor position without rotating.
+def draw_world_points(points, sensor_xy=None, size=DIAGNOSTIC_VIEW_SIZE):
+    """Draw all transformed points in an odom-aligned, auto-fitted view.
 
-    Points remain expressed in odom coordinates.
+    +X points right and +Y points up. The view is recentered dynamically,
+    while individual positions remain expressed in odometry coordinates.
     """
     image = np.full((size, size, 3), 255, dtype=np.uint8)
-
-    # Center the camera on the sensor.
-    if sensor_xy is not None:
-        center_x, center_y = sensor_xy
-    else:
-        center_x, center_y = 0.0, 0.0
-
-    cx = size // 2
-    cy = size // 2
+    origin = (0.0, 0.0) if sensor_xy is None else sensor_xy
+    center, scale = _fit_view(points, origin=origin, size=size)
 
     def to_pixel(x, y):
-        return (
-            int(cx + (x - center_x) * scale),
-            int(cy - (y - center_y) * scale),
-        )
+        return (int(size / 2 + (x - center[0]) * scale),
+                int(size / 2 - (y - center[1]) * scale))
 
-    # Draw odom-aligned grid lines every 0.5 m.
-    grid_spacing = 0.5
-
-    x_min = center_x - cx / scale
-    x_max = center_x + cx / scale
-    y_min = center_y - cy / scale
-    y_max = center_y + cy / scale
-
-    x_values = np.arange(
-        np.floor(x_min / grid_spacing) * grid_spacing,
-        x_max + grid_spacing,
-        grid_spacing,
-    )
-
-    y_values = np.arange(
-        np.floor(y_min / grid_spacing) * grid_spacing,
-        y_max + grid_spacing,
-        grid_spacing,
-    )
-
-    for x in x_values:
-        px, _ = to_pixel(x, center_y)
-        cv2.line(image, (px, 0), (px, size - 1),
-                 (230, 230, 230), 1)
-
-    for y in y_values:
-        _, py = to_pixel(center_x, y)
-        cv2.line(image, (0, py), (size - 1, py),
-                 (230, 230, 230), 1)
-
-    # Draw LiDAR observations.
     for x, y in points:
         px, py = to_pixel(x, y)
-
         if 0 <= px < size and 0 <= py < size:
-            cv2.circle(image, (px, py), 2, (0, 140, 255), -1)
-
-    # Sensor position is at the center of the view.
-    cv2.circle(image, (cx, cy), 7, (255, 100, 0), -1)
-
-    cv2.putText(
-        image,
-        f"Odom position: ({center_x:.2f}, {center_y:.2f}) m",
-        (15, 30),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        (30, 30, 30),
-        2,
-    )
-
+            cv2.circle(image, (px, py), 1, (0, 140, 255), -1)
+    cv2.circle(image, to_pixel(*origin), 4, (255, 100, 0), -1)
+    cv2.putText(image, f"Odom: ({origin[0]:.2f}, {origin[1]:.2f}) m",
+                (8, 19), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (30, 30, 30), 1)
     cv2.imshow(ODOM_WINDOW, image)
 
 
@@ -749,15 +681,29 @@ class LidarExplorer(Node):
         self.focus_narrowest_on_next_scan = False
         self.last_log_time = self.get_clock().now()
 
-        # Prepare both OpenCV windows.
-        cv2.namedWindow(SENSOR_WINDOW, cv2.WINDOW_NORMAL)
-        cv2.namedWindow(ODOM_WINDOW, cv2.WINDOW_NORMAL)
-
-        cv2.moveWindow(SENSOR_WINDOW, 40, 40)
-        cv2.moveWindow(ODOM_WINDOW, 780, 40)
-
-        cv2.namedWindow(EDGE_WINDOW, cv2.WINDOW_NORMAL)
-        cv2.moveWindow(EDGE_WINDOW, 1520, 40)
+        # Initialize all windows and paint immediately, even before /scan or TF
+        # arrive. Small sensor/odom views sit beside the larger edge view.
+        for name in (SENSOR_WINDOW, ODOM_WINDOW, EDGE_WINDOW):
+            cv2.namedWindow(name, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(SENSOR_WINDOW, DIAGNOSTIC_VIEW_SIZE, DIAGNOSTIC_VIEW_SIZE)
+        cv2.resizeWindow(ODOM_WINDOW, DIAGNOSTIC_VIEW_SIZE, DIAGNOSTIC_VIEW_SIZE)
+        cv2.resizeWindow(EDGE_WINDOW, 700, 700)
+        cv2.moveWindow(SENSOR_WINDOW, 30, 35)
+        cv2.moveWindow(ODOM_WINDOW, 395, 35)
+        cv2.moveWindow(EDGE_WINDOW, 760, 35)
+        placeholder = np.full((DIAGNOSTIC_VIEW_SIZE, DIAGNOSTIC_VIEW_SIZE, 3), 255, np.uint8)
+        for name in (SENSOR_WINDOW, ODOM_WINDOW):
+            cv2.imshow(name, placeholder)
+        cv2.imshow(EDGE_WINDOW, np.full((700, 700, 3), 255, np.uint8))
+        # Request visible, above-other-window placement without requiring mouse
+        # focus. TOPMOST is backend/desktop-dependent, so fail gracefully.
+        if hasattr(cv2, "WND_PROP_TOPMOST"):
+            for name in (SENSOR_WINDOW, ODOM_WINDOW, EDGE_WINDOW):
+                try:
+                    cv2.setWindowProperty(name, cv2.WND_PROP_TOPMOST, 1)
+                except cv2.error:
+                    pass
+        cv2.waitKey(1)  # Process initial window show/resize/move events.
 
         # Check for available TF data at 20 Hz.
         self.create_timer(0.05, self.process_pending_scan)

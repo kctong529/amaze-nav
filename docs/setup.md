@@ -171,11 +171,13 @@ $HOME/
 
 ### Three visualization windows
 
-- **Sensor Frame:** raw valid LiDAR returns in sensor-local coordinates (+X forward, +Y left).
-- **Odom Frame:** the latest scan transformed through TF into the fixed odometry frame, displayed with a camera centered on the sensor.
+The Sensor/Odom views scale to fit the current visible LiDAR returns instead of using a fixed zoom. Their smaller windows appear beside the full-size Edge Frame view. Window stacking depends on the desktop environment; on systems without always-on-top support, use your window manager to bring them forward.
+
+- **Sensor Frame:** compact (340 × 340 px) auto-fitted view of raw valid LiDAR returns in sensor-local coordinates (+X forward, +Y left).
+- **Odom Frame:** compact (340 × 340 px) auto-fitted view of the latest scan transformed through TF into the fixed odometry frame; the sensor position is marked, and orientation remains odom-aligned.
 - **Edge Frame:** selected directed grid edge in `(s, t)` coordinates, cross-sectional slice and measured gap dimensions (boundary coordinates, raw width, and usable center width after clearance), robot position, selected plan and representative feasible/rejected trajectories. `s` points along the edge and `+t` to its left.
 
-Select/focus an OpenCV window before pressing a key. Controls verified against `lidar_explorer.py` (the **Meaning** column is a mnemonic; the actual shortcut is in **Key**):
+The explorer paints its three windows at startup and requests always-on-top placement where the OpenCV window backend supports it. You should not need to click the windows just to see their contents; keyboard shortcuts may still require an OpenCV window to have keyboard focus. Controls verified against `lidar_explorer.py` (the **Meaning** column is a mnemonic; the actual shortcut is in **Key**):
 
 | Key | Meaning | Action |
 | --- | --- | --- |

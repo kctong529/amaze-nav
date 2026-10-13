@@ -63,3 +63,8 @@ Resetting Gazebo may rewind simulation time while the explorer is running. The R
 If the explorer remains frozen, confirm that Gazebo is unpaused and `/scan`, `/odom`, and `/tf` are publishing current timestamps. Restart the explorer if the robot-state publisher or TF broadcasters do not recover; that is a separate ROS/Gazebo issue.
 
 When pressing `c` near a graph node (within 0.30 m), the explorer selects the outgoing edge that best matches the robot heading, instead of simply taking the nearest segment. Away from nodes it uses proximity and heading. It then focuses on the slice whose widest measured internal gap is smallest. Empty/occluded slices are not treated as zero-width gaps; use `j`/`k` to inspect adjacent slices.
+
+
+#### Compact diagnostic windows
+
+The Sensor and Odom views use 340 × 340 px windows, dynamically fitting the current scan. The Edge Frame stays large for cross-sections and trajectories. The explorer shows blank initialized windows before the first scan and requests always-on-top placement where supported; key events still require an OpenCV window to have keyboard focus.

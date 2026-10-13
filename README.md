@@ -85,3 +85,6 @@ Navigate without hitting walls, aim for the **2 min 30 s simulation-time** full-
 ## Acknowledgements
 
 Developed as part of **MEC-E5012 Vehicle Mechatronics: Control** at Aalto University. The initial ROS 2 navigation framework and Gazebo maze models are course materials.
+
+
+The Sensor/Odom diagnostic windows now auto-fit LiDAR returns into compact 340 × 340 px views; the Edge Frame remains full-sized. They are shown immediately at startup and request always-on-top placement where supported.
