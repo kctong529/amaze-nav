@@ -164,45 +164,47 @@ def put_multiline_text(
 
 # Small diagnostic views; the edge/trajectory view retains its original size.
 DIAGNOSTIC_VIEW_SIZE = 340
-DIAGNOSTIC_PADDING = 18
+# Fixed world extents match the original larger views, just at fewer pixels.
+# Sensor: 700 px / 150 px/m = 4.67 m across; Odom: 700 / 100 = 7 m.
+SENSOR_VIEW_SCALE = 72     # pixels per metre; fixed across scans
+ODOM_VIEW_SCALE = 48       # pixels per metre; fixed across scans
 
 
-def _fit_view(points, *, origin=(0.0, 0.0), size=DIAGNOSTIC_VIEW_SIZE,
-              padding=DIAGNOSTIC_PADDING):
-    """Fit the entire current scan and the sensor origin inside a compact view.
-
-    Use a single scale on both axes to preserve LiDAR geometry. A new scan may
-    change the scale; unlike the odom frame, these views are not fixed-zoom maps.
-    """
-    pts = np.asarray(points, dtype=float).reshape(-1, 2)
-    pts = pts[np.isfinite(pts).all(axis=1)]
-    anchor = np.asarray(origin, dtype=float)
-    included = np.vstack((pts, anchor[None, :]))
-    low, high = included.min(axis=0), included.max(axis=0)
-    center = (low + high) / 2.0
-    span = max(float(np.max(high - low)), 0.25)
-    scale = (size - 2 * padding) / span
-    return center, scale
+def _draw_fixed_grid(image, to_pixel, center_xy, scale, size):
+    """Half-metre grid at a constant scale, including when no returns exist."""
+    cx, cy = center_xy
+    half_extent = size / (2.0 * scale)
+    xs = np.arange(np.floor((cx - half_extent) * 2) / 2,
+                   cx + half_extent + 0.5, 0.5)
+    ys = np.arange(np.floor((cy - half_extent) * 2) / 2,
+                   cy + half_extent + 0.5, 0.5)
+    for x in xs:
+        px, _ = to_pixel(float(x), cy)
+        if 0 <= px < size:
+            cv2.line(image, (px, 0), (px, size - 1), (235, 235, 235), 1)
+    for y in ys:
+        _, py = to_pixel(cx, float(y))
+        if 0 <= py < size:
+            cv2.line(image, (0, py), (size - 1, py), (235, 235, 235), 1)
 
 
 def draw_lidar_points(points, size=DIAGNOSTIC_VIEW_SIZE):
-    """Draw a compact, automatically fitted raw LiDAR sensor-frame view."""
+    """Fixed-scale sensor view: sensor origin at centre, +X up and +Y left."""
     image = np.full((size, size, 3), 255, dtype=np.uint8)
-    center, scale = _fit_view(points, size=size)
+    scale = SENSOR_VIEW_SCALE
 
     def to_pixel(x, y):
-        return (int(size / 2 - (y - center[1]) * scale),
-                int(size / 2 - (x - center[0]) * scale))
+        return (int(size / 2 - y * scale), int(size / 2 - x * scale))
 
-    # Sensor-frame convention: +X upward, +Y left.
-    origin_px = to_pixel(0.0, 0.0)
+    _draw_fixed_grid(image, to_pixel, (0.0, 0.0), scale, size)
     for x, y in points:
         px, py = to_pixel(x, y)
         if 0 <= px < size and 0 <= py < size:
             cv2.circle(image, (px, py), 1, (0, 140, 255), -1)
+    origin_px = to_pixel(0.0, 0.0)
     cv2.circle(image, origin_px, 4, (255, 100, 0), -1)
     cv2.arrowedLine(image, origin_px,
-                    (origin_px[0], max(0, origin_px[1] - 18)),
+                    (origin_px[0], origin_px[1] - 20),
                     (255, 100, 0), 1, tipLength=0.3)
     cv2.putText(image, f"Sensor: {len(points)} points", (8, 19),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (30, 30, 30), 1)
@@ -210,26 +212,25 @@ def draw_lidar_points(points, size=DIAGNOSTIC_VIEW_SIZE):
 
 
 def draw_world_points(points, sensor_xy=None, size=DIAGNOSTIC_VIEW_SIZE):
-    """Draw all transformed points in an odom-aligned, auto-fitted view.
-
-    +X points right and +Y points up. The view is recentered dynamically,
-    while individual positions remain expressed in odometry coordinates.
-    """
+    """Fixed-scale odom-aligned view, following the sensor without zoom changes."""
     image = np.full((size, size, 3), 255, dtype=np.uint8)
     origin = (0.0, 0.0) if sensor_xy is None else sensor_xy
-    center, scale = _fit_view(points, origin=origin, size=size)
+    center_x, center_y = origin
+    scale = ODOM_VIEW_SCALE
 
     def to_pixel(x, y):
-        return (int(size / 2 + (x - center[0]) * scale),
-                int(size / 2 - (y - center[1]) * scale))
+        return (int(size / 2 + (x - center_x) * scale),
+                int(size / 2 - (y - center_y) * scale))
 
+    _draw_fixed_grid(image, to_pixel, (center_x, center_y), scale, size)
     for x, y in points:
         px, py = to_pixel(x, y)
         if 0 <= px < size and 0 <= py < size:
             cv2.circle(image, (px, py), 1, (0, 140, 255), -1)
     cv2.circle(image, to_pixel(*origin), 4, (255, 100, 0), -1)
     cv2.putText(image, f"Odom: ({origin[0]:.2f}, {origin[1]:.2f}) m",
-                (8, 19), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (30, 30, 30), 1)
+                (8, 19), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+                (30, 30, 30), 1)
     cv2.imshow(ODOM_WINDOW, image)
 
 

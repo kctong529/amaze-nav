@@ -67,4 +67,4 @@ When pressing `c` near a graph node (within 0.30 m), the explorer selects the ou
 
 #### Compact diagnostic windows
 
-The Sensor and Odom views use 340 × 340 px windows, dynamically fitting the current scan. The Edge Frame stays large for cross-sections and trajectories. The explorer shows blank initialized windows before the first scan and requests always-on-top placement where supported; key events still require an OpenCV window to have keyboard focus.
+The Sensor and Odom views use 340 × 340 px windows, at fixed zoom levels (72 px/m Sensor; 48 px/m Odom), avoiding changes in scale between scans. The Edge Frame stays large for cross-sections and trajectories. The explorer shows blank initialized windows before the first scan and requests always-on-top placement where supported; key events still require an OpenCV window to have keyboard focus.
