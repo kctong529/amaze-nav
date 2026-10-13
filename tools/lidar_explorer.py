@@ -372,6 +372,7 @@ def draw_edge_frame(
     total_feasible=0,
     total_rejected=0,
     required_width=REQUIRED_WIDTH,
+    navigator_diagnostic=None,
     size=700,
     scale=300,
 ):
@@ -577,6 +578,16 @@ def draw_edge_frame(
         cv2.putText(image, "No internal gap measured at selected slice",
                     (15, 182), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (70, 70, 70), 1)
 
+    # Diagnostic status is advisory: this tool does not execute the navigator state machine.
+    if navigator_diagnostic:
+        status, explanation = navigator_diagnostic
+        color = ((0, 100, 180) if status == "BLOCKED" else
+                 (0, 130, 0) if status == "UNKNOWN" else (70, 70, 70))
+        cv2.putText(image, f"NAV CHECK: {status}", (15, 267),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+        cv2.putText(image, explanation[:76], (15, 286),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.36, (55, 55, 55), 1)
+
     # Labels.
     cv2.putText(
         image,
@@ -603,7 +614,7 @@ def draw_edge_frame(
         "Use j / k to move slice back / forward\n"
         "Use h / l for previous / next edge; c = current\n"
         "Use p to log; b to assess; t to plan\n"
-        "Use v for view; +/- count; z/x curvature",
+        "Use a for mode; v for view; +/- count; z/x curvature",
         (15, size - 60),
     )
 
@@ -644,6 +655,9 @@ class LidarExplorer(Node):
         self.opening_tracker = OpeningProgressTracker(robot_radius=ROBOT_WIDTH / 2, safety_margin=self.planner_safety_margin)
         self.latest_opening_diagnostics = ()
         self.planner_max_curvature = 8.0
+        self.navigator_equivalent = True  # Toggle using 'a': defaults to navigator-like settings.
+        self.latest_robot_pose = None  # Base pose from odometry, not sensor origin.
+        self.latest_passability = None
         self.latest_slice_results = []
         self.latest_trajectory = None
         self.latest_alignment_st = None
@@ -737,6 +751,7 @@ class LidarExplorer(Node):
         self.latest_plan = None
         self.latest_feasible_trajectories = []
         self.latest_rejected_trajectories = []
+        self.latest_passability = None
 
     def select_nearest_edge(self):
         """Select likely forward edge; near nodes, use heading to choose the exit.
@@ -798,6 +813,8 @@ class LidarExplorer(Node):
     def reset_after_clock_rewind(self, previous_ns, current_ns):
         """Discard pre-reset TF and observations when Gazebo rewinds /clock."""
         self.tf_buffer.clear()
+        self.latest_robot_pose = None
+        self.latest_passability = None
         self.pending_scan = None
         self.latest_odom = None
         self.latest_world_points = None
@@ -885,11 +902,31 @@ class LidarExplorer(Node):
             lateral_range=1.0,
         )
         self.latest_edge_observation = observation
+        # Match the navigator's base-position input rather than the TF sensor
+        # origin. Disallow comparisons when odometry is far from scan time.
+        base_pose = None
+        if self.latest_odom is not None:
+            odom = self.latest_odom
+            odom_ns = odom.header.stamp.sec * 1_000_000_000 + odom.header.stamp.nanosec
+            scan_ns = scan.header.stamp.sec * 1_000_000_000 + scan.header.stamp.nanosec
+            if abs(odom_ns - scan_ns) <= 300_000_000:
+                op = odom.pose.pose
+                oq = op.orientation
+                oyaw = float(np.arctan2(
+                    2.0 * (oq.w * oq.z + oq.x * oq.y),
+                    1.0 - 2.0 * (oq.y * oq.y + oq.z * oq.z),
+                ))
+                base_pose = (float(op.position.x), float(op.position.y), oyaw)
+        self.latest_robot_pose = base_pose
+        tracked_xy = base_pose[:2] if base_pose is not None else (
+            transform.transform.translation.x, transform.transform.translation.y)
         self.latest_robot_st, self.latest_opening_diagnostics = self.opening_tracker.update(
-            observation, (
-                transform.transform.translation.x,
-                transform.transform.translation.y,
-            ),
+            observation, tracked_xy,
+        )
+        self.latest_passability = (
+            assess_passability(observation, base_pose[:2],
+                               robot_radius=ROBOT_WIDTH / 2, safety_margin=SAFETY_MARGIN)
+            if base_pose is not None else None
         )
 
         bottlenecks = detect_bottlenecks(
@@ -981,7 +1018,7 @@ class LidarExplorer(Node):
         ))
 
         sensor_st = points_to_edge_frame(
-            np.asarray([sensor_xy]),
+            np.asarray([tracked_xy]),
             start,
             end,
         )[0]
@@ -1018,7 +1055,13 @@ class LidarExplorer(Node):
             display_limit=self.display_limit,
             total_feasible=len(self.latest_feasible_trajectories),
             total_rejected=len(self.latest_rejected_trajectories),
-            required_width=ROBOT_WIDTH + 2 * self.planner_safety_margin,
+            required_width=ROBOT_WIDTH + 2 * (SAFETY_MARGIN if self.navigator_equivalent else self.planner_safety_margin),
+            navigator_diagnostic=(
+                (self.latest_passability.status.name,
+                 "Navigator-style passability heuristic; no controller/safety verdict")
+                if self.latest_passability is not None else
+                ("NO POSE", "Waiting for time-aligned /odom and /scan")
+            ) if self.navigator_equivalent else ("EXPLORE", "Independent planner exploration parameters"),
         )
 
         # Draw the odometry-frame visualization.
@@ -1163,14 +1206,21 @@ class LidarExplorer(Node):
                 "Wait for next scan, then press t."
             )
 
+        elif key == ord("a"):
+            self.navigator_equivalent = not self.navigator_equivalent
+            self.reset_edge_diagnostics()
+            self.get_logger().info(
+                "Planner mode: " + ("NAVIGATOR-LIKE (base pose and defaults)" if self.navigator_equivalent
+                                     else "EXPLORATION (adjustable curvature/margin)"))
+
         elif key == ord("t"):
             self.get_logger().info(
                 f"Planner geometry: radius={ROBOT_WIDTH / 2:.3f} m, "
                 f"safety_margin={self.planner_safety_margin:.3f} m, "
                 f"required_clearance={ROBOT_WIDTH / 2 + self.planner_safety_margin:.3f} m"
             )
-            if self.latest_edge_observation is None or self.latest_sensor_xy is None:
-                self.get_logger().info("No transformed scan available yet")
+            if self.latest_edge_observation is None or (self.navigator_equivalent and self.latest_robot_pose is None) or (not self.navigator_equivalent and self.latest_sensor_xy is None):
+                self.get_logger().info("No usable scan/pose yet (navigator mode requires /odom within 0.3s of /scan)")
             else:
                 start, end = self.selected_edge
                 robot_s, robot_t = self.latest_robot_st
@@ -1194,14 +1244,29 @@ class LidarExplorer(Node):
                         f"state={opening.state}, entered={opening.observed_entry}, "
                         f"behind_robot_by_s={opening.passed_by_longitudinal_rule}"
                     )
+                pose = self.latest_robot_pose if self.navigator_equivalent else (
+                    *self.latest_sensor_xy, self.latest_sensor_yaw)
                 report = plan_motion(
                     self.latest_edge_observation,
-                    self.latest_sensor_xy,
-                    robot_yaw=self.latest_sensor_yaw,
-                    max_curvature=self.planner_max_curvature,
+                    pose[:2],
+                    robot_yaw=pose[2],
+                    max_curvature=(8.0 if self.navigator_equivalent else self.planner_max_curvature),
                     robot_radius=ROBOT_WIDTH / 2,
-                    safety_margin=self.planner_safety_margin,
+                    safety_margin=(SAFETY_MARGIN if self.navigator_equivalent else self.planner_safety_margin),
                 )
+                if self.navigator_equivalent:
+                    result = assess_passability(
+                        self.latest_edge_observation, pose[:2],
+                        robot_radius=ROBOT_WIDTH / 2, safety_margin=SAFETY_MARGIN)
+                    self.latest_passability = result
+                    self.get_logger().info(
+                        f"NAVIGATOR-LIKE: passability={result.status.name}; "
+                        f"planner={'PROPOSAL' if report.plan else 'HOLD'} "
+                        f"({report.mode}); reason={result.reason}")
+                    if result.status.name == "BLOCKED" and report.plan is not None:
+                        self.get_logger().warn(
+                            "PLANNER HAS PROPOSAL, PASSABILITY SAYS BLOCKED. "
+                            "Navigator may reject edge; no command is simulated.")
                 search = report.search
                 self.latest_plan = report.plan
                 self.latest_alignment_st = (
@@ -1263,14 +1328,19 @@ class LidarExplorer(Node):
                 # Use the pose corresponding to the transformed scan, not
                 # the edge start: previously passed restrictions are irrelevant.
                 start, end = self.selected_edge
-                if self.latest_sensor_xy is None:
-                    self.get_logger().info("No synchronized robot pose available")
+                pose = self.latest_robot_pose if self.navigator_equivalent else (
+                    (*self.latest_sensor_xy, self.latest_sensor_yaw)
+                    if self.latest_sensor_xy is not None else None)
+                if pose is None:
+                    self.get_logger().info("No sufficiently recent robot pose available")
                     return
                 result = assess_passability(
                     self.latest_edge_observation,
-                    robot_position=self.latest_sensor_xy,
-                    robot_radius=ROBOT_WIDTH / 2, safety_margin=self.planner_safety_margin,
+                    robot_position=pose[:2],
+                    robot_radius=ROBOT_WIDTH / 2,
+                    safety_margin=(SAFETY_MARGIN if self.navigator_equivalent else self.planner_safety_margin),
                 )
+                self.latest_passability = result
                 self.get_logger().info(
                     f"Edge {start} -> {end}: {result.status.name} - "
                     f"{result.reason}; narrowest flagged gap="

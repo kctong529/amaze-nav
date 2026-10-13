@@ -88,3 +88,20 @@ Developed as part of **MEC-E5012 Vehicle Mechatronics: Control** at Aalto Univer
 
 
 The Sensor/Odom diagnostic windows use fixed-scale 340 × 340 px views (no per-scan zoom); the Edge Frame remains full-sized. They are shown immediately at startup and request always-on-top placement where supported.
+
+### Navigator-aligned explorer diagnostics
+
+LiDAR Explorer starts in **navigator-like mode**. Press `a` to toggle between this
+mode and independent exploration. In navigator-like mode, `t` evaluates `plan_motion()`
+with the base robot pose from `/odom` (within 0.3 seconds of the LiDAR scan) and
+the navigator's default 0.089 m robot radius, 0.03 m safety margin and 8.0 1/m
+maximum curvature. `b` reports the associated `assess_passability()` heuristic,
+and the edge view shows that passability result. In exploration mode, adjustable
+curvature and safety margin still apply and the sensor pose is used for historical
+comparison.
+
+**Important:** This is a navigator-*like* diagnostic, not a live replay of the
+`navigator.py` control state machine. The explorer does not apply asynchronous
+plan validity checks, trusted-corridor configuration, acceptance hysteresis,
+immediate collision guards, or pure-pursuit/PID commands. A generated candidate
+trajectory is a proposal, not a promise that the navigator will execute it.
