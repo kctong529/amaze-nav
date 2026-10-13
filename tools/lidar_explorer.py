@@ -991,22 +991,56 @@ class LidarExplorer(Node):
                                 f"Current edge: focused passability rejection slice "
                                 f"at s={selected_s:.2f} m"
                             )
-            if selected_s is None:
-                candidates = [
-                    (max(gap.width for gap in section.gaps), section.s)
-                    for section in observation.slices if section.gaps
-                ]
+            if selected_s is None and base_pose is not None:
+                # Mirror assess_passability(): only evaluate sections that are
+                # not behind the robot, with its radius as the rear tolerance.
+                # Use the same lateral analysis band and relevant cluster pairs
+                # when choosing the most restrictive *forward* diagnostic slice.
+                robot_s = float(points_to_edge_frame(
+                    np.asarray([base_pose[:2]], dtype=float), start, end)[0, 0])
+                forward_cutoff = robot_s - ROBOT_WIDTH / 2
+                edge_half_width = 0.712  # assess_passability() default
+                candidates = []
+                for section in observation.slices:
+                    if section.s < forward_cutoff:
+                        continue
+                    relevant = sorted(
+                        (max(left, -edge_half_width), min(right, edge_half_width))
+                        for left, right in section.obstacle_intervals
+                        if right >= -edge_half_width and left <= edge_half_width
+                    )
+                    if len(relevant) < 2:
+                        continue
+                    widths = [next_left - prev_right
+                              for (_, prev_right), (next_left, _) in zip(relevant, relevant[1:])
+                              if next_left > prev_right]
+                    if widths:
+                        candidates.append((max(widths), section.s))
                 if candidates:
                     limiting_width, selected_s = min(candidates)
                     self.get_logger().info(
                         f"Current edge: no narrow-gap rejection slice; "
-                        f"focused narrowest observed opening at s={selected_s:.2f} m "
-                        f"(widest gap W={limiting_width:.3f} m)"
+                        f"focused narrowest relevant forward opening at s={selected_s:.2f} m "
+                        f"(widest gap W={limiting_width:.3f} m; "
+                        f"robot_s={robot_s:.2f} m)"
                     )
                 else:
+                    # Keep the display ahead of the robot even if there is no
+                    # measurable internal opening (UNKNOWN, not BLOCKED).
+                    forward_slices = [section.s for section in observation.slices
+                                      if section.s >= forward_cutoff]
+                    if forward_slices:
+                        selected_s = min(forward_slices, key=lambda s: abs(s - max(robot_s, 0.0)))
+                    else:
+                        selected_s = float(observation.length)
                     self.get_logger().info(
-                        "Current edge: no measured internal gaps; keeping midpoint slice"
+                        "Current edge: no relevant forward internal gaps; "
+                        f"focused forward slice at s={selected_s:.2f} m"
                     )
+            elif selected_s is None:
+                self.get_logger().debug(
+                    "No time-aligned robot base pose; cannot select a forward-only slice"
+                )
             if selected_s is not None:
                 self.slice_s = float(selected_s)
 
