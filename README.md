@@ -24,7 +24,6 @@ The provided navigator uses `FOLLOW → BACKTRACK → REPLAN → FOLLOW` for blo
 
 ## Documentation
 
-- [Passability detection audit](docs/perception-passability-audit.md) — known false-positive/false-negative risks, integration guidance, and test gaps.
 - [Perception Module v1.1 — planning strategy](docs/perception-strategy.md) — start here: destination-first decisions, LiDAR gap detection, trajectory rejection, opening fallbacks, recovery, and replanning.
 - [Perception Module v1.1 — API and integration](docs/perception-api.md) — exact functions, motion plans, 14 strategy labels, and controller contract.
 - [Environment setup](docs/setup.md) — clone the repository, configure ROS 2 and Gazebo model paths, build, launch, and troubleshoot.
