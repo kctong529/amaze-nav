@@ -591,34 +591,20 @@ def draw_edge_frame(
     cv2.putText(image, label, (size - text_size[0] - 12, 28),
                 font, 0.48, label_color, 1, cv2.LINE_AA)
 
-    # Labels.
-    cv2.putText(
-        image,
-        f"Slice s={slice_s:.2f} m",
-        (15, 30),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.65,
-        (30, 30, 30),
-        2,
-    )
-
-    cv2.putText(
-        image,
-        f"Selected points: {len(slice_points)}",
-        (15, 60),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.65,
-        (30, 30, 30),
-        2,
-    )
+    # Keep only the selected longitudinal position in a quiet corner.
+    slice_label = f"s={slice_s:.2f} m"
+    slice_label_size, _ = cv2.getTextSize(slice_label, font, 0.46, 1)
+    cv2.putText(image, slice_label,
+                (size - slice_label_size[0] - 12, size - 12),
+                font, 0.46, (70, 70, 70), 1, cv2.LINE_AA)
 
     put_multiline_text(
         image,
         "Use j / k to move slice back / forward\n"
-        "Use h / l for previous / next edge; c = current\n"
+        "Use h / l for edges; c = current; a = auto edge\n"
         "Use p to log; b to assess; t to plan\n"
         "Use v for view; +/- count; z/x curvature; m/n margin",
-        (15, size - 60),
+        (15, size - 115),
     )
 
     cv2.imshow(EDGE_WINDOW, image)
@@ -696,6 +682,7 @@ class LidarExplorer(Node):
 
         self.slice_s = 0.712
         self.focus_narrowest_on_next_scan = False
+        self.auto_current_edge = False
         self.last_log_time = self.get_clock().now()
 
         # Initialize all windows and paint immediately, even before /scan or TF
@@ -727,6 +714,9 @@ class LidarExplorer(Node):
 
         # Process OpenCV GUI events independently of TF availability.
         self.create_timer(0.05, self.update_gui)
+        # Automatic selection is independent of scan render rate and only
+        # changes the focused slice when the directed edge changes.
+        self.create_timer(1.0, self.refresh_current_edge)
 
     @property
     def selected_edge(self):
@@ -755,24 +745,24 @@ class LidarExplorer(Node):
         self.latest_rejected_trajectories = []
         self.latest_passability = None
 
-    def select_nearest_edge(self):
-        """Select likely forward edge; near nodes, use heading to choose the exit.
+    def select_nearest_edge(self, *, only_on_change=False):
+        """Find the likely current directed edge from position and heading.
 
-        Close to a grid node, the next directed edge starts at that node, even
-        when a geometrically nearer segment ends there. Elsewhere, use edge
-        proximity with heading preference among nearby candidates. This is a
-        pose-based guess, not the navigator's selected route.
+        Automatic updates preserve the manually chosen slice on an unchanged
+        edge. Explicit 'c' refreshes the passability-selected slice even if
+        the current directed edge remains the same.
         """
         if self.latest_sensor_xy is None or self.latest_sensor_yaw is None:
-            self.get_logger().warn("No transformed scan/pose yet; cannot locate current edge")
+            if not only_on_change:
+                self.get_logger().warn("No transformed scan/pose yet; cannot locate current edge")
             return
         position = np.asarray(self.latest_sensor_xy, dtype=float)
         heading = np.array((np.cos(self.latest_sensor_yaw),
                             np.sin(self.latest_sensor_yaw)))
         index, context = choose_current_directed_edge(self.edges, position, heading)
+        if only_on_change and index == self.edge_index:
+            return
         self.edge_index = index
-        # Analyze the selected edge with a fresh scan, then focus on the slice
-        # whose widest measured internal opening is smallest.
         self.slice_s = 0.712
         self.reset_edge_diagnostics()
         self.focus_narrowest_on_next_scan = True
@@ -781,6 +771,11 @@ class LidarExplorer(Node):
             f"Current edge selection: {context}; "
             "focusing passability rejection slice (or narrowest observed gap) on next scan"
         )
+
+    def refresh_current_edge(self):
+        """On auto mode, select a new edge at most once per second."""
+        if self.auto_current_edge:
+            self.select_nearest_edge(only_on_change=True)
 
     def log_slice_profile(self):
         """Log measured gap intervals for each longitudinal slice."""
@@ -1162,6 +1157,15 @@ class LidarExplorer(Node):
 
         elif key == ord("c"):
             self.select_nearest_edge()
+
+        elif key == ord("a"):
+            self.auto_current_edge = not self.auto_current_edge
+            self.get_logger().info(
+                f"Automatic current-edge selection: {'ON' if self.auto_current_edge else 'OFF'} "
+                "(1 s interval; keep slice when edge is unchanged)"
+            )
+            if self.auto_current_edge:
+                self.refresh_current_edge()
 
         elif key == ord("v"):
             modes = ("best", "feasible", "debug")
