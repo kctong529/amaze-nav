@@ -69,19 +69,10 @@ When pressing `c` near a graph node (within 0.30 m), the explorer selects the ou
 
 The Sensor and Odom views use 340 × 340 px windows, at fixed zoom levels (72 px/m Sensor; 48 px/m Odom), avoiding changes in scale between scans. The Edge Frame stays large for cross-sections and trajectories. The explorer shows blank initialized windows before the first scan and requests always-on-top placement where supported; key events still require an OpenCV window to have keyboard focus.
 
-### Navigator-aligned explorer diagnostics
+### Navigator-aligned diagnostics
 
-LiDAR Explorer starts in **navigator-like mode**. Press `a` to toggle between this
-mode and independent exploration. In navigator-like mode, `t` evaluates `plan_motion()`
-with the base robot pose from `/odom` (within 0.3 seconds of the LiDAR scan) and
-the navigator's default 0.089 m robot radius, 0.03 m safety margin and 8.0 1/m
-maximum curvature. `b` reports the associated `assess_passability()` heuristic,
-and the edge view shows that passability result. In exploration mode, adjustable
-curvature and safety margin still apply and the sensor pose is used for historical
-comparison.
+LiDAR Explorer always uses the robot base pose from `/odom` (within 0.3 seconds of the LiDAR scan) for trajectory proposals. `t` runs the shared `plan_motion()` and logs both the planner result and the passability assessment. A compact **NAV CHECK: UNKNOWN / BLOCKED / CLEAR** label appears in the top-right of the Edge Frame; **NO POSE** means a sufficiently recent base pose is unavailable. The `a` mode toggle has been removed.
 
-**Important:** This is a navigator-*like* diagnostic, not a live replay of the
-`navigator.py` control state machine. The explorer does not apply asynchronous
-plan validity checks, trusted-corridor configuration, acceptance hysteresis,
-immediate collision guards, or pure-pursuit/PID commands. A generated candidate
-trajectory is a proposal, not a promise that the navigator will execute it.
+The defaults match the navigator's 0.089 m robot radius, 0.03 m safety margin, and 8.0 1/m maximum curvature. `z`/`x` and `m`/`n` still adjust local trajectory experiments; the **NAV CHECK** passability label uses the navigator's fixed default clearance threshold, so it is not affected by the experimental controls. `b` logs the detailed passability reason. An `UNKNOWN` status does **not** mean the edge is clear.
+
+**Important:** The status applies to the explorer's selected edge, not necessarily the navigator's live A* edge. It is a navigator-*like* perception diagnostic, not a replay of the navigation state machine, plan acceptance, collision guards, or pure-pursuit/PID commands. Feasible candidates are not guarantees that the navigator will execute them.

@@ -193,7 +193,7 @@ The explorer paints its three windows at startup and requests always-on-top plac
 | `m` / `n` | **Margin** | Decrease / increase the explorer's safety margin by 0.01 m |
 
 
-**Typical workflow:** position the robot using Gazebo/teleoperation **with the navigator stopped**, press `c` to select the current directed edge and automatically focus its limiting observed gap slice (or choose an edge manually with `h` / `l`), inspect slices with `j` / `k`, press `p` for slice details, `b` for passability, then `t` to sample and visualize candidate motions. Press `v` to compare viable paths and rejection examples. Allow a fresh scan after changing the margin with `m`/`n` before running `t` again.
+**Typical workflow:** position the robot using Gazebo/teleoperation **with the navigator stopped**, press `c` to select the current directed edge and focus the passability rejection slice when available, otherwise the narrowest observed gap slice (or choose an edge manually with `h` / `l`), inspect slices with `j` / `k`, press `p` for slice details, `b` for passability, then `t` to sample and visualize candidate motions. Press `v` to compare viable paths and rejection examples. Allow a fresh scan after changing the margin with `m`/`n` before running `t` again.
 
 `z`/`x` and `m`/`n` change parameters **in the explorer**, not those used by an independently running navigator. `c` infers the directed edge from geometric proximity and heading, **not the navigator's internal current-edge state**. It selects the cross-section with the smallest *widest measured internal gap*, because that is the most restrictive observed set of openings; slices without measured internal gaps are ignored rather than interpreted as blocked. If none contain internal gaps, the slice stays at the edge midpoint. Use `j`/`k` to inspect other slices. The measured usable width is `max(0, measured gap width - robot width - twice the explorer safety margin)`; it does not certify that the opening is reachable. Displayed trajectories are candidate paths checked against observed returns; unobserved space is not guaranteed free. A proposed segment after a `STOP / ROTATE` step is **hypothetical** until a fresh scan and a new plan. Stop the explorer with **Ctrl+C** in its terminal; its windows should close on shutdown.
 
@@ -270,19 +270,10 @@ Next: [edge ground-truth exploration](edge-ground-truth.md) or [controller-only 
 
 **Gazebo reset:** If Gazebo simulation time jumps backwards, the explorer clears its stale TF and visualization state and waits for new matching transforms. Temporary `TF_OLD_DATA` warnings may appear. See [debugging](debugging.md) for checks if updates do not resume.
 
-### Navigator-aligned explorer diagnostics
+### Navigator-aligned diagnostics
 
-LiDAR Explorer starts in **navigator-like mode**. Press `a` to toggle between this
-mode and independent exploration. In navigator-like mode, `t` evaluates `plan_motion()`
-with the base robot pose from `/odom` (within 0.3 seconds of the LiDAR scan) and
-the navigator's default 0.089 m robot radius, 0.03 m safety margin and 8.0 1/m
-maximum curvature. `b` reports the associated `assess_passability()` heuristic,
-and the edge view shows that passability result. In exploration mode, adjustable
-curvature and safety margin still apply and the sensor pose is used for historical
-comparison.
+LiDAR Explorer always uses the robot base pose from `/odom` (within 0.3 seconds of the LiDAR scan) for trajectory proposals. `t` runs the shared `plan_motion()` and logs both the planner result and the passability assessment. A compact **NAV CHECK: UNKNOWN / BLOCKED / CLEAR** label appears in the top-right of the Edge Frame; **NO POSE** means a sufficiently recent base pose is unavailable. The `a` mode toggle has been removed.
 
-**Important:** This is a navigator-*like* diagnostic, not a live replay of the
-`navigator.py` control state machine. The explorer does not apply asynchronous
-plan validity checks, trusted-corridor configuration, acceptance hysteresis,
-immediate collision guards, or pure-pursuit/PID commands. A generated candidate
-trajectory is a proposal, not a promise that the navigator will execute it.
+The defaults match the navigator's 0.089 m robot radius, 0.03 m safety margin, and 8.0 1/m maximum curvature. `z`/`x` and `m`/`n` still adjust local trajectory experiments; the **NAV CHECK** passability label uses the navigator's fixed default clearance threshold, so it is not affected by the experimental controls. `b` logs the detailed passability reason. An `UNKNOWN` status does **not** mean the edge is clear.
+
+**Important:** The status applies to the explorer's selected edge, not necessarily the navigator's live A* edge. It is a navigator-*like* perception diagnostic, not a replay of the navigation state machine, plan acceptance, collision guards, or pure-pursuit/PID commands. Feasible candidates are not guarantees that the navigator will execute them.
