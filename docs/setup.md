@@ -181,7 +181,7 @@ Select/focus an OpenCV window before pressing a key. Controls verified against `
 | --- | --- | --- |
 | `j` / `k` | **Slice** | Move the selected slice backward / forward by 0.10 m (Vim down/up) |
 | `h` / `l` | **Edge** | Select the previous / next directed graph edge (Vim left/right); clear edge-specific results |
-| `c` | **Current** | Select the nearest directed edge using the robot's position and heading; focus its slice |
+| `c` | **Current** | Select the current directed edge from pose/heading, then focus the slice with the narrowest measured gap set |
 | `p` | **Profile** | Print the selected cross-sectional slice profile |
 | `b` | **Blockage** | Assess the selected edge's passability and log the result |
 | `t` | **Trajectory** | Generate, display and log local trajectory candidates |
@@ -191,9 +191,9 @@ Select/focus an OpenCV window before pressing a key. Controls verified against `
 | `m` / `n` | **Margin** | Decrease / increase the explorer's safety margin by 0.01 m |
 
 
-**Typical workflow:** position the robot using Gazebo/teleoperation **with the navigator stopped**, press `c` to locate the nearest directed edge (or choose manually with `h` / `l`), inspect slices with `j` / `k`, press `p` for slice details, `b` for passability, then `t` to sample and visualize candidate motions. Press `v` to compare viable paths and rejection examples. Allow a fresh scan after changing the margin with `m`/`n` before running `t` again.
+**Typical workflow:** position the robot using Gazebo/teleoperation **with the navigator stopped**, press `c` to select the current directed edge and automatically focus its limiting observed gap slice (or choose an edge manually with `h` / `l`), inspect slices with `j` / `k`, press `p` for slice details, `b` for passability, then `t` to sample and visualize candidate motions. Press `v` to compare viable paths and rejection examples. Allow a fresh scan after changing the margin with `m`/`n` before running `t` again.
 
-`z`/`x` and `m`/`n` change parameters **in the explorer**, not those used by an independently running navigator. `c` uses geometric proximity and heading, **not the navigator's internal current-edge state**. The measured usable width is `max(0, measured gap width - robot width - twice the explorer safety margin)`; it does not certify that the opening is reachable. Displayed trajectories are candidate paths checked against observed returns; unobserved space is not guaranteed free. A proposed segment after a `STOP / ROTATE` step is **hypothetical** until a fresh scan and a new plan. Stop the explorer with **Ctrl+C** in its terminal; its windows should close on shutdown.
+`z`/`x` and `m`/`n` change parameters **in the explorer**, not those used by an independently running navigator. `c` infers the directed edge from geometric proximity and heading, **not the navigator's internal current-edge state**. It selects the cross-section with the smallest *widest measured internal gap*, because that is the most restrictive observed set of openings; slices without measured internal gaps are ignored rather than interpreted as blocked. If none contain internal gaps, the slice stays at the edge midpoint. Use `j`/`k` to inspect other slices. The measured usable width is `max(0, measured gap width - robot width - twice the explorer safety margin)`; it does not certify that the opening is reachable. Displayed trajectories are candidate paths checked against observed returns; unobserved space is not guaranteed free. A proposed segment after a `STOP / ROTATE` step is **hypothetical** until a fresh scan and a new plan. Stop the explorer with **Ctrl+C** in its terminal; its windows should close on shutdown.
 
 For troubleshooting, diagnostic interpretation and links to the perception API, see [RViz & debugging](debugging.md#standalone-lidar-trajectory-explorer-implemented) and [Perception API](perception-api.md).
 
@@ -264,3 +264,6 @@ Look for `Unable to find uri`, `model://project_track`, spawning errors, or an i
 - [ ] The explorer launcher/script paths have been checked, and its diagnostic window opens (when installed).
 
 Next: [edge ground-truth exploration](edge-ground-truth.md) or [controller-only debug tests](controller-debug.md).
+
+
+**Gazebo reset:** If Gazebo simulation time jumps backwards, the explorer clears its stale TF and visualization state and waits for new matching transforms. Temporary `TF_OLD_DATA` warnings may appear. See [debugging](debugging.md) for checks if updates do not resume.

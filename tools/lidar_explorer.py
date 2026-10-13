@@ -646,7 +646,7 @@ class LidarExplorer(Node):
         )
 
         # TF listener and buffer.
-        self.tf_buffer = Buffer()
+        self.tf_buffer = Buffer(node=self)  # Clear stale TF data on ROS clock jumps.
         self.tf_listener = TransformListener(
             self.tf_buffer,
             self,
@@ -673,6 +673,7 @@ class LidarExplorer(Node):
 
         # The latest scan awaiting its timestamp-matched TF.
         self.pending_scan = None
+        self.last_scan_stamp_ns = None
 
         # Diagnostic counters.
         self.received_scans = 0
@@ -694,6 +695,7 @@ class LidarExplorer(Node):
         ))
 
         self.slice_s = 0.712
+        self.focus_narrowest_on_next_scan = False
         self.last_log_time = self.get_clock().now()
 
         # Prepare both OpenCV windows.
@@ -767,13 +769,16 @@ class LidarExplorer(Node):
         distance, neg_alignment, index, fraction = min(
             candidates, key=lambda item: (item[1], item[0], item[2]))
         self.edge_index = index
-        self.slice_s = round(float(np.clip(fraction * EDGE_LENGTH, 0.0, EDGE_LENGTH)), 3)
+        # Wait for the freshly selected edge to be analyzed, then focus its
+        # most restrictive measured cross-section (not the robot position).
+        self.slice_s = 0.712
         self.reset_edge_diagnostics()
+        self.focus_narrowest_on_next_scan = True
         self.log_selected_edge()
         self.get_logger().info(
             f"Nearest edge: distance={distance:.3f} m, "
             f"heading alignment={-neg_alignment:+.2f}; "
-            f"slice s={self.slice_s:.3f} m (press t to plan after next scan)"
+            "focusing narrowest observed gap slice on next scan"
         )
 
     def log_slice_profile(self):
@@ -806,8 +811,34 @@ class LidarExplorer(Node):
                 f"gaps={gap_text}"
             )
     
+    def reset_after_clock_rewind(self, previous_ns, current_ns):
+        """Discard pre-reset TF and observations when Gazebo rewinds /clock."""
+        self.tf_buffer.clear()
+        self.pending_scan = None
+        self.latest_odom = None
+        self.latest_world_points = None
+        self.latest_sensor_xy = None
+        self.latest_sensor_yaw = None
+        self.latest_robot_st = None
+        self.reset_edge_diagnostics()
+        self.focus_narrowest_on_next_scan = False
+        self.last_log_time = self.get_clock().now()
+        self.get_logger().warn(
+            f"Detected simulation-time rewind ({previous_ns / 1e9:.3f} -> "
+            f"{current_ns / 1e9:.3f} s); cleared stale TF and explorer state"
+        )
+
     def scan_callback(self, scan):
         """Receive a scan and retain it until its TF is available."""
+        stamp_ns = int(scan.header.stamp.sec) * 1_000_000_000 + int(scan.header.stamp.nanosec)
+        # Permit small out-of-order deliveries but detect a real Gazebo reset.
+        if (self.last_scan_stamp_ns is not None
+                and stamp_ns < self.last_scan_stamp_ns - 1_000_000_000):
+            self.reset_after_clock_rewind(self.last_scan_stamp_ns, stamp_ns)
+        self.last_scan_stamp_ns = max(stamp_ns, self.last_scan_stamp_ns or stamp_ns) if (
+            self.last_scan_stamp_ns is not None
+            and stamp_ns >= self.last_scan_stamp_ns - 1_000_000_000
+        ) else stamp_ns
         self.received_scans += 1
 
         points = scan_to_points(scan)
@@ -912,6 +943,30 @@ class LidarExplorer(Node):
             }
             for section in observation.slices
         ]
+
+        if self.focus_narrowest_on_next_scan:
+            # The limiting opening is the WIDEST internal gap in each slice;
+            # select the slice where that best available opening is smallest.
+            # Ignore slices with no measured internal gaps: no observation
+            # is not evidence of a zero-width opening.
+            candidates = [
+                (max(gap.width for gap in section.gaps), section.s)
+                for section in observation.slices if section.gaps
+            ]
+            self.focus_narrowest_on_next_scan = False
+            if candidates:
+                limiting_width, selected_s = min(candidates)
+                self.slice_s = float(selected_s)
+                self.get_logger().info(
+                    f"Current edge: focused narrowest gap set at "
+                    f"s={self.slice_s:.2f} m; widest opening "
+                    f"W={limiting_width:.3f} m"
+                )
+            else:
+                self.get_logger().warn(
+                    "Current edge has no measured internal gaps; "
+                    "leaving slice at edge midpoint"
+                )
 
         # Select points belonging to the current cross-section.
         slice_points = extract_slice(
